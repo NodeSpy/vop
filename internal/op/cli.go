@@ -12,6 +12,9 @@ import (
 type Commander interface {
 	Run(args ...string) (string, error)
 	RunPassthrough(args ...string) error
+	// RunInteractive runs a command that may prompt on the TTY (e.g. password)
+	// while capturing stdout. Stderr is passed through to the terminal.
+	RunInteractive(args ...string) (string, error)
 }
 
 // ExecCommander implements Commander using the real op binary.
@@ -30,6 +33,16 @@ func (c *ExecCommander) RunPassthrough(args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func (c *ExecCommander) RunInteractive(args ...string) (string, error) {
+	cmd := exec.Command("op", args...)
+	// Don't set Stdin — op signin reads passwords from /dev/tty directly.
+	// Stderr goes to the terminal so the user sees prompts/errors.
+	cmd.Stderr = os.Stderr
+	// Capture stdout where op writes the session token export.
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err
 }
 
 // CLIClient implements Client using the 1Password CLI binary.
@@ -55,9 +68,28 @@ func (c *CLIClient) EnsureSignedIn(account string) error {
 	}
 
 	// Not signed in — try interactive sign-in.
-	if signInErr := c.Cmd.RunPassthrough("signin", "--account", account); signInErr != nil {
+	// Use --raw to get just the session token on stdout. The op CLI reads
+	// the password from /dev/tty, so the user can still type their password
+	// even though we are capturing stdout.
+	out, signInErr := c.Cmd.RunInteractive("signin", "--account", account, "--raw")
+	if signInErr != nil {
 		return fmt.Errorf("failed to sign in to 1Password account %q.\n  Make sure the account is added: op account add --address %s\n  Then try again, or use a service account token instead", account, account)
 	}
+
+	// --raw outputs just the session token. Set it in the environment so
+	// subsequent op commands in this process are authenticated.
+	token := strings.TrimSpace(out)
+	if token != "" {
+		// The env var is OP_SESSION_<shorthand> where shorthand is derived
+		// from the account address (e.g. "ednition" from "ednition.1password.com").
+		shorthand := account
+		if idx := strings.Index(shorthand, "."); idx > 0 {
+			shorthand = shorthand[:idx]
+		}
+		shorthand = strings.NewReplacer(".", "_", "-", "_").Replace(shorthand)
+		os.Setenv("OP_SESSION_"+shorthand, token)
+	}
+
 	return nil
 }
 

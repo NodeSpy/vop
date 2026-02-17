@@ -3,6 +3,7 @@ package op
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
 )
 
@@ -12,6 +13,8 @@ type mockCommander struct {
 	RunFunc func(args ...string) (string, error)
 	// RunPassthroughFunc is called for each RunPassthrough invocation.
 	RunPassthroughFunc func(args ...string) error
+	// RunInteractiveFunc is called for each RunInteractive invocation.
+	RunInteractiveFunc func(args ...string) (string, error)
 	// Calls records all Run calls for assertion.
 	Calls [][]string
 }
@@ -30,6 +33,14 @@ func (m *mockCommander) RunPassthrough(args ...string) error {
 		return m.RunPassthroughFunc(args...)
 	}
 	return nil
+}
+
+func (m *mockCommander) RunInteractive(args ...string) (string, error) {
+	m.Calls = append(m.Calls, args)
+	if m.RunInteractiveFunc != nil {
+		return m.RunInteractiveFunc(args...)
+	}
+	return "", nil
 }
 
 func TestNewCLI(t *testing.T) {
@@ -79,9 +90,9 @@ func TestEnsureSignedIn_NeedsSignin(t *testing.T) {
 		RunFunc: func(args ...string) (string, error) {
 			return "", fmt.Errorf("not signed in")
 		},
-		RunPassthroughFunc: func(args ...string) error {
+		RunInteractiveFunc: func(args ...string) (string, error) {
 			callCount++
-			return nil
+			return "fake-session-token", nil
 		},
 	}
 	client := &CLIClient{Cmd: mock}
@@ -91,12 +102,46 @@ func TestEnsureSignedIn_NeedsSignin(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if callCount != 1 {
-		t.Fatalf("expected RunPassthrough called once, got %d", callCount)
+		t.Fatalf("expected RunInteractive called once, got %d", callCount)
 	}
-	// Second call should be signin
+	// Second call should be signin with --raw
 	args := mock.Calls[1]
 	if args[0] != "signin" {
 		t.Errorf("expected 'signin', got %v", args[0])
+	}
+	foundRaw := false
+	for _, a := range args {
+		if a == "--raw" {
+			foundRaw = true
+		}
+	}
+	if !foundRaw {
+		t.Error("expected --raw flag in signin args")
+	}
+}
+
+func TestEnsureSignedIn_SetsSessionEnv(t *testing.T) {
+	mock := &mockCommander{
+		RunFunc: func(args ...string) (string, error) {
+			return "", fmt.Errorf("not signed in")
+		},
+		RunInteractiveFunc: func(args ...string) (string, error) {
+			return "test-session-token-123", nil
+		},
+	}
+	client := &CLIClient{Cmd: mock}
+
+	// Clear any existing env var
+	t.Setenv("OP_SESSION_ednition", "")
+
+	err := client.EnsureSignedIn("ednition.1password.com")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := os.Getenv("OP_SESSION_ednition")
+	if got != "test-session-token-123" {
+		t.Errorf("expected OP_SESSION_ednition='test-session-token-123', got %q", got)
 	}
 }
 
