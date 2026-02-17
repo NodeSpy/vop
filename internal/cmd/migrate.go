@@ -41,8 +41,6 @@ func cmdMigrate(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	client := getCLIClient()
-
 	// List available vaults
 	out, err := exec.Command("vaulted", "ls").Output()
 	if err != nil {
@@ -98,7 +96,7 @@ func cmdMigrate(_ *cobra.Command, args []string) error {
 	fmt.Println()
 
 	for _, v := range toMigrate {
-		if err := migrateSingleVault(c, client, v); err != nil {
+		if err := migrateSingleVault(c, v); err != nil {
 			ui.Error("Failed to migrate '%s': %s", v, err)
 		}
 	}
@@ -107,7 +105,7 @@ func cmdMigrate(_ *cobra.Command, args []string) error {
 	return cmdLs(nil, nil)
 }
 
-func migrateSingleVault(c *config.Config, client op.Client, vaultName string) error {
+func migrateSingleVault(c *config.Config, vaultName string) error {
 	fmt.Printf("%s--- Migrating: %s ---%s\n\n", ui.Bold, vaultName, ui.Reset)
 
 	if c.ProfileExists(vaultName) {
@@ -157,44 +155,82 @@ func migrateSingleVault(c *config.Config, client op.Client, vaultName string) er
 
 	fmt.Println()
 
-	// 1Password account selection
-	ui.Info("Select the 1Password account to store these credentials.")
-	fmt.Println()
+	// --- Choose backend before contacting 1Password ---
+	useSDK := ui.PromptYN("Use a service account token? (no = use op CLI)", false)
 
-	accounts, err := client.ListAccounts()
-	if err == nil && len(accounts) > 0 {
-		fmt.Printf("  %sAvailable 1Password accounts:%s\n", ui.Bold, ui.Reset)
-		for _, a := range accounts {
-			fmt.Printf("  %s  (%s)\n", a.URL, a.Email)
+	var client op.Client
+	var serviceAccountToken, opVault, opAccount string
+
+	if useSDK {
+		serviceAccountToken = ui.Prompt("Service account token", "")
+		if serviceAccountToken == "" {
+			return fmt.Errorf("service account token cannot be empty")
 		}
-		fmt.Println()
-	}
-
-	opAccount := ui.Prompt("1Password account (e.g. my.1password.com)", "")
-	if opAccount == "" {
-		ui.Error("1Password account required. Skipping.")
-		return nil
-	}
-
-	if err := client.EnsureSignedIn(opAccount); err != nil {
-		return err
-	}
-
-	// Vault selection
-	fmt.Println()
-	ui.Info("Select the 1Password vault to store the item in.")
-	fmt.Println()
-
-	vaults, err := client.ListVaults(opAccount)
-	if err == nil && len(vaults) > 0 {
-		fmt.Printf("  %sAvailable 1Password vaults:%s\n", ui.Bold, ui.Reset)
-		for _, v := range vaults {
-			fmt.Printf("  %s\n", v.Name)
+		opVault = ui.Prompt("1Password vault name", "Private")
+		if opVault == "" {
+			return fmt.Errorf("vault name is required when using a service account token")
 		}
+
+		sdkClient, err := op.NewSDK(serviceAccountToken, opVault)
+		if err != nil {
+			return fmt.Errorf("failed to initialize SDK client: %w", err)
+		}
+		client = sdkClient
+
+		// List vaults to confirm connectivity and let user verify
+		vaults, err := client.ListVaults("")
+		if err == nil && len(vaults) > 0 {
+			fmt.Println()
+			fmt.Printf("  %sAvailable 1Password vaults:%s\n", ui.Bold, ui.Reset)
+			for _, v := range vaults {
+				fmt.Printf("  %s\n", v.Name)
+			}
+			fmt.Println()
+		}
+	} else {
+		cliClient := getCLIClient()
+		client = cliClient
+
+		// Show available 1Password accounts
+		ui.Info("Select the 1Password account to store these credentials.")
 		fmt.Println()
+
+		accounts, err := cliClient.ListAccounts()
+		if err == nil && len(accounts) > 0 {
+			fmt.Printf("  %sAvailable 1Password accounts:%s\n", ui.Bold, ui.Reset)
+			for _, a := range accounts {
+				fmt.Printf("  %s  (%s)\n", a.URL, a.Email)
+			}
+			fmt.Println()
+		}
+
+		opAccount = ui.Prompt("1Password account (e.g. my.1password.com)", "")
+		if opAccount == "" {
+			ui.Error("1Password account required. Skipping.")
+			return nil
+		}
+
+		if err := client.EnsureSignedIn(opAccount); err != nil {
+			return err
+		}
+
+		// Vault selection
+		fmt.Println()
+		ui.Info("Select the 1Password vault to store the item in.")
+		fmt.Println()
+
+		vaults, err := client.ListVaults(opAccount)
+		if err == nil && len(vaults) > 0 {
+			fmt.Printf("  %sAvailable 1Password vaults:%s\n", ui.Bold, ui.Reset)
+			for _, v := range vaults {
+				fmt.Printf("  %s\n", v.Name)
+			}
+			fmt.Println()
+		}
+
+		opVault = ui.Prompt("1Password vault name", "Private")
 	}
 
-	opVault := ui.Prompt("1Password vault name", "Private")
 	opItemName := ui.Prompt("1Password item name", "AWS - "+vaultName)
 	profileName := ui.Prompt("vop profile name", vaultName)
 
@@ -242,11 +278,13 @@ func migrateSingleVault(c *config.Config, client op.Client, vaultName string) er
 	}
 
 	profile := &config.Profile{
-		OPAccount:   opAccount,
-		OPItem:      opItemName,
-		Description: description,
-		MFATOTPItem: mfaTOTPItem,
-		IAMUsername: iamUsername,
+		OPAccount:           opAccount,
+		OPItem:              opItemName,
+		OPVault:             opVault,
+		Description:         description,
+		MFATOTPItem:         mfaTOTPItem,
+		IAMUsername:         iamUsername,
+		ServiceAccountToken: serviceAccountToken,
 	}
 
 	c.SetProfile(profileName, profile)

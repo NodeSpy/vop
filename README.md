@@ -145,6 +145,32 @@ Each profile independently chooses its backend:
 - **No `service_account_token`** = CLI backend (uses `op` binary, interactive auth)
 - **Has `service_account_token`** = SDK backend (pure Go, no external binaries)
 
+### Setting up a 1Password service account
+
+The SDK backend requires a [1Password service account](https://developer.1password.com/docs/service-accounts/) token. To create one:
+
+1. Sign in to your 1Password account at [my.1password.com](https://my.1password.com)
+2. Go to **Developer** in the sidebar (or **Settings > Developer** depending on your plan)
+3. Under **Infrastructure Secrets**, click **Service Accounts**
+4. Click **Create Service Account**
+5. Give it a name (e.g. `vop`)
+6. Grant it access to the vault(s) that contain your AWS credential items -- it needs **read** and **write** permissions (write is needed for key rotation and migration)
+7. Copy the service account token (starts with `ops_`)
+
+Then use it when adding or migrating a profile:
+
+```bash
+# When adding a new profile
+vop add prod
+# Answer "yes" to "Use a service account token?" and paste the token
+
+# When migrating from Vaulted
+vop migrate prod
+# Answer "yes" to "Use a service account token?" and paste the token
+```
+
+The token is stored in `~/.config/vop/profiles.json` which is chmod 600 and should not be committed to version control.
+
 ## Commands
 
 | Command | Description |
@@ -177,7 +203,12 @@ vop migrate <vault-name>
 vop migrate
 ```
 
-This unlocks the Vaulted vault, extracts the AWS credentials (access key, secret key, MFA serial, region), creates a new 1Password item containing those credentials, and sets up a vop profile pointing to it. If the vault has MFA configured, you'll be prompted to link an existing 1Password TOTP item.
+This unlocks the Vaulted vault, extracts the AWS credentials (access key, secret key, MFA serial, region), and then asks which 1Password backend to use:
+
+- **Service account token (SDK)**: provide your token and vault name -- no `op` CLI needed
+- **op CLI**: select your 1Password account and vault interactively
+
+It then creates a new 1Password item containing those credentials and sets up a vop profile pointing to it. If the vault has MFA configured, you'll be prompted to link an existing 1Password TOTP item.
 
 ## License
 
