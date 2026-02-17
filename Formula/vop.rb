@@ -1,37 +1,29 @@
 # typed: false
 # frozen_string_literal: true
 
-# Homebrew formula for vop — AWS credential management via 1Password.
-#
-# Install:
-#   brew tap NodeSpy/vop https://github.com/NodeSpy/vop
-#   brew install vop
-#
-# The SHA256 values and version are updated automatically by the
-# update-homebrew job in .github/workflows/release.yml.
 class Vop < Formula
   desc "AWS credential management via 1Password"
   homepage "https://github.com/NodeSpy/vop"
-  version "VERSION_PLACEHOLDER"
+  version "v0.1.0"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/NodeSpy/vop/releases/download/#{version}/vop-darwin-arm64"
-      sha256 "SHA256_DARWIN_ARM64_PLACEHOLDER"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.1.0/vop-darwin-arm64"
+      sha256 "9afa345c2123e2e40469b9b80f818d62763a17c3c6db1b2dab77ae7917ff3f40"
     else
-      url "https://github.com/NodeSpy/vop/releases/download/#{version}/vop-darwin-amd64"
-      sha256 "SHA256_DARWIN_AMD64_PLACEHOLDER"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.1.0/vop-darwin-amd64"
+      sha256 "6783197dbc1c2d73f4bbebfc6b93263594c707951591de9a3a42479d936a6039"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/NodeSpy/vop/releases/download/#{version}/vop-linux-arm64"
-      sha256 "SHA256_LINUX_ARM64_PLACEHOLDER"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.1.0/vop-linux-arm64"
+      sha256 "64d2d8f3adb0d4e1198d00bca4425f1f519332aa5796fc0ec26e23d4440a06fe"
     else
-      url "https://github.com/NodeSpy/vop/releases/download/#{version}/vop-linux-amd64"
-      sha256 "SHA256_LINUX_AMD64_PLACEHOLDER"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.1.0/vop-linux-amd64"
+      sha256 "e872ecf9274bc6534dd3f8529b48cf2734b05b1f8f11a0687d577662295bc049"
     end
   end
 
