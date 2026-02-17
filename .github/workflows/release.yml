@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+
+  build:
+    name: Build (${{ matrix.os }}/${{ matrix.arch }})
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runner: ubuntu-latest
+          - os: darwin
+            arch: amd64
+            runner: macos-13
+          - os: darwin
+            arch: arm64
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install cross-compiler (linux/arm64)
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "1"
+        run: |
+          if [ "${{ matrix.os }}" = "linux" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
+            export CC=aarch64-linux-gnu-gcc
+          fi
+
+          VERSION=${GITHUB_REF_NAME}
+          COMMIT=${GITHUB_SHA::8}
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          LDFLAGS="-s -w -X github.com/NodeSpy/vop/internal/version.Version=${VERSION}"
+          LDFLAGS="${LDFLAGS} -X github.com/NodeSpy/vop/internal/version.Commit=${COMMIT}"
+          LDFLAGS="${LDFLAGS} -X github.com/NodeSpy/vop/internal/version.Date=${DATE}"
+
+          mkdir -p dist
+          go build -ldflags "${LDFLAGS}" -o "dist/vop-${{ matrix.os }}-${{ matrix.arch }}" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vop-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/vop-${{ matrix.os }}-${{ matrix.arch }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          for dir in artifacts/vop-*; do
+            binary=$(basename "$dir")
+            cp "$dir/$binary" "release/$binary"
+            chmod +x "release/$binary"
+          done
+
+          # Create checksums
+          cd release
+          sha256sum vop-* > checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/vop-*
+            release/checksums.txt
+
+      - name: Update Homebrew formula
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          SHA_DARWIN_ARM64=$(sha256sum release/vop-darwin-arm64 | awk '{print $1}')
+          SHA_DARWIN_AMD64=$(sha256sum release/vop-darwin-amd64 | awk '{print $1}')
+          SHA_LINUX_ARM64=$(sha256sum release/vop-linux-arm64 | awk '{print $1}')
+          SHA_LINUX_AMD64=$(sha256sum release/vop-linux-amd64 | awk '{print $1}')
+
+          cat > Formula/vop.rb << 'RUBY'
+          # typed: false
+          # frozen_string_literal: true
+
+          class Vop < Formula
+            desc "AWS credential management via 1Password"
+            homepage "https://github.com/NodeSpy/vop"
+          RUBY
+
+          # Inject dynamic values (not expanded by heredoc due to 'RUBY' quoting)
+          cat >> Formula/vop.rb << EOF
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/NodeSpy/vop/releases/download/${VERSION}/vop-darwin-arm64"
+                sha256 "${SHA_DARWIN_ARM64}"
+              else
+                url "https://github.com/NodeSpy/vop/releases/download/${VERSION}/vop-darwin-amd64"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/NodeSpy/vop/releases/download/${VERSION}/vop-linux-arm64"
+                sha256 "${SHA_LINUX_ARM64}"
+              else
+                url "https://github.com/NodeSpy/vop/releases/download/${VERSION}/vop-linux-amd64"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+            end
+
+            def install
+              binary = Dir["vop-*"].first || "vop"
+              bin.install binary => "vop"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/vop version")
+            end
+          end
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/vop.rb
+          git commit -m "Update Homebrew formula for ${VERSION}"
+          git push origin HEAD:main
