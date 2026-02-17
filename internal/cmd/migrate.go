@@ -189,6 +189,9 @@ func migrateSingleVault(c *config.Config, vaultName string) error {
 		}
 	} else {
 		cliClient := getCLIClient()
+		if !cliClient.IsInstalled() {
+			return fmt.Errorf("the 1Password CLI (op) is not installed.\n  Install it: https://developer.1password.com/docs/cli/get-started/\n  Or re-run this command and choose the service account token option instead")
+		}
 		client = cliClient
 
 		// Show available 1Password accounts

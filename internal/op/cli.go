@@ -48,11 +48,17 @@ func (c *CLIClient) IsInstalled() bool {
 }
 
 func (c *CLIClient) EnsureSignedIn(account string) error {
+	// Check if we already have an active session for this account.
 	_, err := c.Cmd.Run("account", "get", "--account", account)
 	if err == nil {
 		return nil
 	}
-	return c.Cmd.RunPassthrough("signin", "--account", account)
+
+	// Not signed in — try interactive sign-in.
+	if signInErr := c.Cmd.RunPassthrough("signin", "--account", account); signInErr != nil {
+		return fmt.Errorf("failed to sign in to 1Password account %q.\n  Make sure the account is added: op account add --address %s\n  Then try again, or use a service account token instead", account, account)
+	}
+	return nil
 }
 
 func (c *CLIClient) ReadField(account, item, field string) (string, error) {

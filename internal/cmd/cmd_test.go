@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/NodeSpy/vop/internal/config"
+	"github.com/NodeSpy/vop/internal/op"
 )
 
 // setupTestConfig creates a temp config file and configures the cmd package to use it.
@@ -253,8 +254,21 @@ func TestGetCLIClient(t *testing.T) {
 	}
 }
 
+// mockClient implements op.Client for testing.
+type mockClient struct{}
+
+func (m *mockClient) IsInstalled() bool                                  { return true }
+func (m *mockClient) EnsureSignedIn(_ string) error                      { return nil }
+func (m *mockClient) ReadField(_, _, _ string) (string, error)           { return "", nil }
+func (m *mockClient) GetTOTP(_, _ string) (string, error)                { return "", nil }
+func (m *mockClient) EditItem(_ string, _ string, _ ...string) error     { return nil }
+func (m *mockClient) ListAccounts() ([]op.OPAccount, error)              { return nil, nil }
+func (m *mockClient) ListVaults(_ string) ([]op.OPVault, error)          { return nil, nil }
+func (m *mockClient) CreateItem(_, _, _, _, _ string, _ ...string) error { return nil }
+
 func TestGetClientForProfile_CLI(t *testing.T) {
-	cliClient = nil
+	// Inject a mock so the test works even without op installed.
+	cliClient = &mockClient{}
 	defer func() { cliClient = nil }()
 
 	profile := &config.Profile{
@@ -268,6 +282,34 @@ func TestGetClientForProfile_CLI(t *testing.T) {
 	}
 	if client == nil {
 		t.Fatal("getClientForProfile returned nil")
+	}
+}
+
+func TestGetClientForProfile_CLI_NotInstalled(t *testing.T) {
+	cliClient = nil
+	defer func() { cliClient = nil }()
+
+	profile := &config.Profile{
+		OPAccount: "my.1password.com",
+		OPItem:    "AWS - prod",
+	}
+
+	// On machines without op installed, this should return a clear error.
+	client, err := getClientForProfile(profile)
+	cli := getCLIClient()
+	if !cli.IsInstalled() {
+		// op not installed — we expect an error
+		if err == nil {
+			t.Fatal("expected error when op is not installed, got nil")
+		}
+		if client != nil {
+			t.Fatal("expected nil client when op is not installed")
+		}
+	} else {
+		// op is installed — should succeed
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	}
 }
 

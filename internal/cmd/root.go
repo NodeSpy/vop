@@ -128,7 +128,11 @@ func getClientForProfile(profile *config.Profile) (op.Client, error) {
 	if profile.UsesSDK() {
 		return op.NewSDK(profile.ServiceAccountToken, profile.OPVault)
 	}
-	return getCLIClient(), nil
+	client := getCLIClient()
+	if !client.IsInstalled() {
+		return nil, fmt.Errorf("the 1Password CLI (op) is not installed.\n  Install it: https://developer.1password.com/docs/cli/get-started/\n  Or configure this profile with a service account token instead")
+	}
+	return client, nil
 }
 
 // getCLIClient returns the cached CLI-based op.Client.
