@@ -33,10 +33,10 @@ jobs:
             runner: ubuntu-latest
           - os: darwin
             arch: amd64
-            runner: macos-13
+            runner: macos-latest
           - os: darwin
             arch: arm64
-            runner: macos-14
+            runner: macos-latest
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
