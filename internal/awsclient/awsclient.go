@@ -115,13 +115,30 @@ func getSessionToken(ctx context.Context, client stsAPI, serialNumber, tokenCode
 
 // ListMFADevices returns the MFA serial number for the given IAM user.
 // If username is empty, it uses the caller's identity.
+// When multiple devices exist, the first one is returned.
 func ListMFADevices(ctx context.Context, accessKey, secretKey, username string) (string, error) {
 	cfg := staticConfig(accessKey, secretKey)
 	client := iam.NewFromConfig(cfg)
 	return listMFADevices(ctx, client, username)
 }
 
+// ListAllMFADevices returns all MFA serial numbers for the given IAM user.
+// If username is empty, it uses the caller's identity.
+func ListAllMFADevices(ctx context.Context, accessKey, secretKey, username string) ([]string, error) {
+	cfg := staticConfig(accessKey, secretKey)
+	client := iam.NewFromConfig(cfg)
+	return listAllMFADevices(ctx, client, username)
+}
+
 func listMFADevices(ctx context.Context, client iamAPI, username string) (string, error) {
+	serials, err := listAllMFADevices(ctx, client, username)
+	if err != nil {
+		return "", err
+	}
+	return serials[0], nil
+}
+
+func listAllMFADevices(ctx context.Context, client iamAPI, username string) ([]string, error) {
 	input := &iam.ListMFADevicesInput{}
 	if username != "" {
 		input.UserName = aws.String(username)
@@ -129,14 +146,18 @@ func listMFADevices(ctx context.Context, client iamAPI, username string) (string
 
 	out, err := client.ListMFADevices(ctx, input)
 	if err != nil {
-		return "", fmt.Errorf("iam:ListMFADevices failed: %w", err)
+		return nil, fmt.Errorf("iam:ListMFADevices failed: %w", err)
 	}
 
 	if len(out.MFADevices) == 0 {
-		return "", fmt.Errorf("no MFA devices found for this IAM user")
+		return nil, fmt.Errorf("no MFA devices found for this IAM user")
 	}
 
-	return aws.ToString(out.MFADevices[0].SerialNumber), nil
+	serials := make([]string, len(out.MFADevices))
+	for i, d := range out.MFADevices {
+		serials[i] = aws.ToString(d.SerialNumber)
+	}
+	return serials, nil
 }
 
 // CreateAccessKey calls iam:CreateAccessKey to create a new access key.

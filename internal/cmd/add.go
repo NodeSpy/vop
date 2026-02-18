@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"strings"
 
+	"github.com/NodeSpy/vop/internal/awsclient"
 	"github.com/NodeSpy/vop/internal/config"
+	"github.com/NodeSpy/vop/internal/op"
 	"github.com/NodeSpy/vop/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -43,6 +47,7 @@ func cmdAdd(_ *cobra.Command, args []string) error {
 	// Choose backend: service account token (SDK) or op CLI
 	useSDK := ui.PromptYN("Use a service account token? (no = use op CLI)", false)
 
+	var client op.Client
 	var serviceAccountToken, opVault, opAccount string
 
 	if useSDK {
@@ -54,11 +59,21 @@ func cmdAdd(_ *cobra.Command, args []string) error {
 		if opVault == "" {
 			return fmt.Errorf("vault name is required when using a service account token")
 		}
+		sdkClient, sdkErr := op.NewSDK(serviceAccountToken, opVault)
+		if sdkErr != nil {
+			return fmt.Errorf("failed to initialize SDK client: %w", sdkErr)
+		}
+		client = sdkClient
 	} else {
 		opAccount = ui.Prompt("1Password account (e.g. my.1password.com)", "")
 		if opAccount == "" {
 			return fmt.Errorf("1Password account cannot be empty")
 		}
+		cliClient := getCLIClient()
+		if !cliClient.IsInstalled() {
+			return fmt.Errorf("the 1Password CLI (op) is not installed.\n  Install it: https://developer.1password.com/docs/cli/get-started/\n  Or re-run this command and choose the service account token option instead")
+		}
+		client = cliClient
 	}
 
 	opItem := ui.Prompt("1Password item name for AWS credentials", "")
@@ -67,24 +82,6 @@ func cmdAdd(_ *cobra.Command, args []string) error {
 	}
 
 	description := ui.Prompt("Description", "")
-
-	mfaTOTPItem := ""
-	if ui.PromptYN("Configure MFA/TOTP?", false) {
-		totpOptions := []string{
-			"Same item (" + opItem + ")",
-			"Different item",
-		}
-		totpChoice, totpErr := ui.Select("Where is the TOTP seed?", totpOptions)
-		if totpErr != nil {
-			return totpErr
-		}
-		if totpChoice == totpOptions[0] {
-			mfaTOTPItem = opItem
-		} else {
-			mfaTOTPItem = ui.Prompt("1Password item containing TOTP", "")
-		}
-	}
-
 	iamUsername := ui.Prompt("IAM username (blank = caller identity)", "")
 
 	fmt.Println()
@@ -113,6 +110,118 @@ func cmdAdd(_ *cobra.Command, args []string) error {
 		mfaField := ui.Prompt("Field name for MFA serial (blank to skip)", "")
 		if mfaField != "" {
 			fieldMap["mfa serial"] = mfaField
+		}
+	}
+
+	// Helper to resolve the effective field name for a base name.
+	fn := func(base string) string {
+		if fieldMap != nil {
+			if mapped, ok := fieldMap[base]; ok {
+				return mapped
+			}
+		}
+		if fieldPrefix == "" {
+			return base
+		}
+		return fieldPrefix + base
+	}
+
+	// --- MFA setup ---
+	mfaTOTPItem := ""
+	mfaSerial := ""
+
+	if ui.PromptYN("Configure MFA/TOTP?", false) {
+		// Sign in so we can read credentials
+		if err := client.EnsureSignedIn(opAccount); err != nil {
+			return err
+		}
+
+		// Read the access key to look up MFA devices via AWS IAM
+		akField := fn("access key id")
+		skField := fn("secret access key")
+
+		accessKey, err := client.ReadField(opAccount, opItem, akField)
+		if err != nil {
+			return fmt.Errorf("failed to read access key from 1Password: %w", err)
+		}
+		secretKey, err := client.ReadField(opAccount, opItem, skField)
+		if err != nil {
+			return fmt.Errorf("failed to read secret key from 1Password: %w", err)
+		}
+
+		ui.Info("Looking up MFA devices via AWS IAM...")
+		serials, mfaErr := awsclient.ListAllMFADevices(
+			context.Background(),
+			accessKey, secretKey,
+			iamUsername,
+		)
+		if mfaErr != nil {
+			return fmt.Errorf("failed to list MFA devices: %w", mfaErr)
+		}
+
+		if len(serials) == 1 {
+			mfaSerial = serials[0]
+			ui.Success("Found MFA device: %s", mfaSerial)
+		} else {
+			fmt.Println()
+			selected, selErr := ui.Select("Select MFA device", serials)
+			if selErr != nil {
+				return selErr
+			}
+			mfaSerial = selected
+		}
+
+		// Derive IAM username from MFA serial if not already set
+		if iamUsername == "" {
+			parts := strings.Split(mfaSerial, "/")
+			if len(parts) > 1 {
+				iamUsername = parts[len(parts)-1]
+			}
+		}
+
+		// Store the MFA serial on the 1Password item
+		assignment := fn("mfa serial") + "[text]=" + mfaSerial
+		ui.Info("Storing MFA serial on '%s'...", opItem)
+		if editErr := client.EditItem(opAccount, opItem, assignment); editErr != nil {
+			ui.Warn("Could not store MFA serial on 1Password item: %s", editErr)
+			ui.Info("You may need to add it manually.")
+		} else {
+			ui.Success("MFA serial saved to 1Password item.")
+		}
+
+		// Link TOTP item — same pattern as migrate
+		fmt.Println()
+		totpOptions := []string{
+			"Same item (" + opItem + ")",
+			"Different item",
+			"Skip (no TOTP configured)",
+		}
+		totpChoice, totpErr := ui.Select("Where is the TOTP seed for MFA?", totpOptions)
+		if totpErr != nil {
+			return totpErr
+		}
+		switch totpChoice {
+		case totpOptions[0]:
+			mfaTOTPItem = opItem
+		case totpOptions[1]:
+			// Try to list items in the vault for a picker
+			items, _ := client.ListItems(opAccount, opVault)
+			otherOptions := make([]string, 0, len(items))
+			for _, it := range items {
+				if it.Title != opItem {
+					otherOptions = append(otherOptions, it.Title)
+				}
+			}
+			if len(otherOptions) > 0 {
+				fmt.Println()
+				sel, selErr := ui.Select("TOTP item", otherOptions)
+				if selErr != nil {
+					return selErr
+				}
+				mfaTOTPItem = sel
+			} else {
+				mfaTOTPItem = ui.Prompt("1Password item containing TOTP", "")
+			}
 		}
 	}
 
