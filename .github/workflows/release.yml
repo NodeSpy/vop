@@ -171,4 +171,10 @@ jobs:
 
           git add Formula/vop.rb
           git commit -m "Update Homebrew formula for ${VERSION}"
-          git push origin main
+
+          # Retry push with rebase in case main advanced during the build
+          for i in 1 2 3; do
+            git push origin main && break
+            echo "Push failed (attempt $i), rebasing and retrying..."
+            git pull --rebase origin main
+          done
