@@ -70,6 +70,9 @@ func cmdExec(_ *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Push to credential server if running (best-effort).
+	pushToServer(profileName, awsCreds)
+
 	creds.ExportToEnv(awsCreds, profileName)
 
 	_, _, err = creds.WriteFiles(awsCreds, profileName)

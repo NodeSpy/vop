@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/NodeSpy/vop/internal/config"
+	"github.com/NodeSpy/vop/internal/creds"
+	"github.com/NodeSpy/vop/internal/credserver"
 	"github.com/NodeSpy/vop/internal/op"
 	"github.com/NodeSpy/vop/internal/ui"
 	"github.com/spf13/cobra"
@@ -59,6 +61,8 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newCredProcessCmd())
 	root.AddCommand(newAgentCmd())
 	root.AddCommand(newCatCmd())
+	root.AddCommand(newServeCmd())
+	root.AddCommand(newAuthCmd())
 
 	return root
 }
@@ -193,6 +197,20 @@ func resolveProfile(c *config.Config, name string) (string, *config.Profile, err
 func requireProfile(c *config.Config, name string) (*config.Profile, error) {
 	_, p, err := resolveProfile(c, name)
 	return p, err
+}
+
+// pushToServer sends credentials to the running credential server as a
+// side effect. Returns true if the server was reached. Failures are
+// silently ignored -- the push is best-effort.
+func pushToServer(profileName string, awsCreds *creds.AWSCredentials) bool {
+	client := credserver.NewClient()
+	if client == nil {
+		return false
+	}
+	if err := client.PushCreds(profileName, awsCreds); err != nil {
+		return false
+	}
+	return true
 }
 
 // completeProfiles provides tab-completion for profile names.

@@ -23,9 +23,21 @@ AWS credential management via 1Password. Spawn shells and run commands with AWS 
 curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
 ```
 
-This detects your OS and architecture, downloads the correct binary, and installs it to `/usr/local/bin`. Set `VOP_INSTALL_DIR` to install elsewhere:
+The installer auto-detects available package managers and offers the best install method:
+
+- **Homebrew** -- if `brew` is in your PATH, offers `brew install vop`
+- **AUR** -- on Arch Linux with `yay` or `paru`, offers the `vop-bin` AUR package
+- **Binary download** -- always available as a fallback, downloads to `/usr/local/bin`
+
+When multiple methods are available, you'll be prompted to choose. To force a specific method or override the install directory:
 
 ```bash
+# Force a specific method
+VOP_METHOD=brew curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
+VOP_METHOD=aur curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
+VOP_METHOD=binary curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
+
+# Custom install directory (binary method only)
 VOP_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
 ```
 
@@ -40,6 +52,16 @@ To upgrade:
 
 ```bash
 brew upgrade vop
+```
+
+### Arch Linux (AUR)
+
+With an AUR helper:
+
+```bash
+yay -S vop-bin
+# or
+paru -S vop-bin
 ```
 
 ### Nix

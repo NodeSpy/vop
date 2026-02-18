@@ -25,6 +25,7 @@ func newShellCmd() *cobra.Command {
 	}
 	cmd.Flags().Bool("no-refresh", false, "Disable automatic credential refresh")
 	cmd.Flags().BoolP("quiet", "q", false, "Suppress all informational output")
+	cmd.Flags().Bool("serve", false, "Start credential server if not already running")
 	return cmd
 }
 
@@ -37,6 +38,14 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 	c, err := loadConfig()
 	if err != nil {
 		return err
+	}
+
+	// Start credential server if --serve is set and no server is running.
+	serve, _ := cmd.Flags().GetBool("serve")
+	if serve {
+		if err := ensureServer(cmd); err != nil {
+			ui.Warn("Failed to start credential server: %s", err)
+		}
 	}
 
 	profileName := ""
@@ -76,6 +85,9 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Push to credential server if running (best-effort).
+	pushToServer(profileName, awsCreds)
 
 	creds.ExportToEnv(awsCreds, profileName)
 
@@ -163,6 +175,9 @@ func autoRefresh(stop <-chan struct{}, profile *config.Profile, profileName stri
 			ui.Warn("Auto-refresh: failed to write credential files: %s", err)
 			return
 		}
+
+		// Push refreshed creds to server if running (best-effort).
+		pushToServer(profileName, newCreds)
 
 		ui.Success("Credentials auto-refreshed (expires: %s)", newCreds.Expiration)
 		expiration = newCreds.Expiration

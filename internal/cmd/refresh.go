@@ -61,6 +61,9 @@ func cmdRefresh(_ *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Push to credential server if running (best-effort).
+	pushToServer(profileName, awsCreds)
+
 	// Update tmpfs credential files
 	credFile, jsonFile, err := creds.WriteFiles(awsCreds, profileName)
 	if err != nil {
