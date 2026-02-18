@@ -122,6 +122,27 @@ This prompts for confirmation, then downloads and installs the latest release.
 
 If installed via Homebrew, use `brew upgrade vop` instead.
 
+## Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash -s -- uninstall
+```
+
+This detects all vop installations on your system (Homebrew, AUR, standalone binary) and offers to remove them. If you have both a package-managed install and a standalone binary (e.g. from a previous one-liner install), it will warn about the conflict and default to removing only the standalone binary.
+
+To uninstall a specific method manually:
+
+```bash
+# Homebrew
+brew uninstall vop && brew untap NodeSpy/vop
+
+# AUR
+yay -R vop-bin
+
+# Standalone binary
+sudo rm /usr/local/bin/vop
+```
+
 ## Quick start
 
 ```bash
@@ -179,6 +200,7 @@ Profiles are stored in `~/.config/vop/profiles.json` (chmod 600). This file is i
 | `iam_username` | No | IAM username (for key rotation) |
 | `mfa_item` | No | Separate 1Password item for MFA TOTP |
 | `description` | No | Profile description |
+| `agent_policy` | No | Custom agent instructions (default: read-only) |
 
 ### Backend selection
 

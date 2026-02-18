@@ -42,14 +42,8 @@ func cmdEdit(_ *cobra.Command, args []string) error {
 	iamUsername := ui.Prompt("IAM username (blank to remove)", profile.IAMUsername)
 	serviceAccountToken := ui.Prompt("Service account token (blank to use op CLI)", profile.ServiceAccountToken)
 
-	agentDefault := profile.AgentPolicy
-	if agentDefault == "" {
-		agentDefault = "readonly"
-	}
-	agentPolicy := ui.Prompt("Agent policy (readonly/full/custom string)", agentDefault)
-	if agentPolicy == "readonly" {
-		agentPolicy = "" // omit default from config
-	}
+	// Agent policy: show default instructions, offer to customize.
+	agentPolicy := promptAgentPolicy(profile.AgentPolicy)
 
 	// Preserve existing field map, offer to edit it
 	fieldMap := profile.FieldMap

@@ -83,17 +83,13 @@ func cmdAgent(_ *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Show agent policy instructions.
-	policyLabel := "readonly"
+	policyLabel := "default (read-only)"
 	if profile != nil && profile.AgentPolicy != "" {
-		policyLabel = profile.AgentPolicy
+		policyLabel = "custom"
 	}
-	instructions := ""
+	instructions := config.DefaultAgentInstructions
 	if profile != nil {
 		instructions = profile.AgentInstructions()
-	} else {
-		// No profile config available; use default.
-		defaultProfile := &config.Profile{}
-		instructions = defaultProfile.AgentInstructions()
 	}
 	fmt.Printf("  %sAgent policy:%s %s\n", ui.Bold, ui.Reset, policyLabel)
 	fmt.Printf("    %s\n", instructions)

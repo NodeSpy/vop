@@ -225,6 +225,9 @@ func cmdAdd(_ *cobra.Command, args []string) error {
 		}
 	}
 
+	// Agent policy
+	agentPolicy := promptAgentPolicy("")
+
 	profile := &config.Profile{
 		OPAccount:           opAccount,
 		OPItem:              opItem,
@@ -235,6 +238,7 @@ func cmdAdd(_ *cobra.Command, args []string) error {
 		MFATOTPItem:         mfaTOTPItem,
 		IAMUsername:         iamUsername,
 		ServiceAccountToken: serviceAccountToken,
+		AgentPolicy:         agentPolicy,
 	}
 
 	c.SetProfile(name, profile)

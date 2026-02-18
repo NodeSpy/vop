@@ -458,6 +458,9 @@ func migrateSingleVault(c *config.Config, vaultName string) error {
 		}
 	}
 
+	// Agent policy
+	agentPolicy := promptAgentPolicy("")
+
 	profile := &config.Profile{
 		OPAccount:           opAccount,
 		OPItem:              opItemName,
@@ -467,6 +470,7 @@ func migrateSingleVault(c *config.Config, vaultName string) error {
 		MFATOTPItem:         mfaTOTPItem,
 		IAMUsername:         iamUsername,
 		ServiceAccountToken: serviceAccountToken,
+		AgentPolicy:         agentPolicy,
 	}
 
 	c.SetProfile(profileName, profile)
