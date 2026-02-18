@@ -1,5 +1,5 @@
+# Maintainer: Daniel Baldwin <daniel@baldwin.io>
 # Maintainer: Adam Haymond <coastgrd@gmail.com>
-# Co-maintainer: Daniel Baldwin <daniel@baldwin.io>
 #
 # NOTE: This file is a reference copy. The release workflow generates
 # the actual PKGBUILD with correct checksums and publishes it to AUR
