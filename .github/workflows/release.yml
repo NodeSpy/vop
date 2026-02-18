@@ -213,6 +213,7 @@ jobs:
 
           cat > PKGBUILD << EOF
           # Maintainer: Daniel Baldwin <daniel@baldwin.io>
+          # Maintainer: Adam Haymond <coastgrd@gmail.com>
           pkgname=vop-bin
           pkgver=${VERSION}
           pkgrel=1
