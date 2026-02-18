@@ -10,20 +10,20 @@ class Vop < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/NodeSpy/vop/releases/download/v0.2.5/vop-darwin-arm64"
-      sha256 "c6961308ec132aec1aac0f0e3acd3b7dfa7a23ea854e764ef8e700da5d9879d1"
+      sha256 "b6a25e23bc065acba311bcf907c3ffb2edef5042270be2b1f6769b30fb3b0d44"
     else
       url "https://github.com/NodeSpy/vop/releases/download/v0.2.5/vop-darwin-amd64"
-      sha256 "5a0f07475bbd52edafef5db76e168ae4d75b6bf0987c8121196be193eafedca9"
+      sha256 "bd0f85eb020f8f0f8785773d2acb057592fb4fd5fa2712c93b179dcec5fc4d3b"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/NodeSpy/vop/releases/download/v0.2.5/vop-linux-arm64"
-      sha256 "34981a318f9cc2214eeabbdc74749fa363afd5b2ab64eca20a8262b07eb7fa4a"
+      sha256 "4d03d7c229d99976a123f311668f9e33a40bd93fbff1b4fbf8ee77c99b17891f"
     else
       url "https://github.com/NodeSpy/vop/releases/download/v0.2.5/vop-linux-amd64"
-      sha256 "735801511959617c0e5f3d980a6f705e44944a1d910de29f96c44703a166c9ce"
+      sha256 "717898e4c8ec3e1b123dc0531e5743255d319709532fc67f1a2265865f37a1e5"
     end
   end
 
