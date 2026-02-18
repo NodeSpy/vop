@@ -216,6 +216,7 @@ jobs:
           arch=('x86_64' 'aarch64')
           url="https://github.com/NodeSpy/vop"
           license=('MIT')
+          depends=('1password-cli')
           provides=('vop')
           conflicts=('vop')
 
