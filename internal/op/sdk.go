@@ -47,14 +47,34 @@ func (s *SDKClient) ReadField(_, item, field string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to read field %q from item %q: %w", field, item, err)
 	}
+
+	// Build section title→ID map to support "section.field" notation used by the CLI.
+	sectionIDs := make(map[string]string, len(fullItem.Sections))
+	for _, sec := range fullItem.Sections {
+		sectionIDs[strings.ToLower(sec.Title)] = sec.ID
+	}
+
+	// If the field name contains a dot, treat the prefix as a section name.
+	var wantSectionID string
+	fieldTitle := field
+	if dotIdx := strings.Index(field, "."); dotIdx >= 0 {
+		sectionName := field[:dotIdx]
+		fieldTitle = field[dotIdx+1:]
+		wantSectionID = sectionIDs[strings.ToLower(sectionName)]
+	}
+
 	for _, f := range fullItem.Fields {
-		if strings.EqualFold(f.Title, field) {
-			val := strings.TrimSpace(f.Value)
-			if val == "" {
-				return "", fmt.Errorf("empty value for field %q in item %q", field, item)
-			}
-			return val, nil
+		if !strings.EqualFold(f.Title, fieldTitle) {
+			continue
 		}
+		if wantSectionID != "" && (f.SectionID == nil || !strings.EqualFold(*f.SectionID, wantSectionID)) {
+			continue
+		}
+		val := strings.TrimSpace(f.Value)
+		if val == "" {
+			return "", fmt.Errorf("empty value for field %q in item %q", field, item)
+		}
+		return val, nil
 	}
 	return "", fmt.Errorf("field %q not found in item %q", field, item)
 }
@@ -85,7 +105,13 @@ func (s *SDKClient) EditItem(_, item string, assignments ...string) error {
 		return err
 	}
 
-	// Apply assignments (format: "field label=value" or "field label[type]=value")
+	// Build section title→ID map to support "section.field" notation used by the CLI.
+	sectionIDs := make(map[string]string, len(fullItem.Sections))
+	for _, sec := range fullItem.Sections {
+		sectionIDs[strings.ToLower(sec.Title)] = sec.ID
+	}
+
+	// Apply assignments (format: "field label=value" or "section.field label[type]=value")
 	for _, assignment := range assignments {
 		eqIdx := strings.Index(assignment, "=")
 		if eqIdx < 0 {
@@ -94,25 +120,46 @@ func (s *SDKClient) EditItem(_, item string, assignments ...string) error {
 		label := assignment[:eqIdx]
 		value := assignment[eqIdx+1:]
 		// Strip type annotation like [text] or [password]
+		fieldType := onepassword.ItemFieldTypeText
 		if bracketIdx := strings.Index(label, "["); bracketIdx >= 0 {
+			typeStr := label[bracketIdx+1 : len(label)-1]
 			label = label[:bracketIdx]
+			if typeStr == "password" {
+				fieldType = onepassword.ItemFieldTypeConcealed
+			}
+		}
+
+		// If label contains a dot, treat prefix as section name.
+		var wantSectionID string
+		fieldTitle := label
+		if dotIdx := strings.Index(label, "."); dotIdx >= 0 {
+			sectionName := label[:dotIdx]
+			fieldTitle = label[dotIdx+1:]
+			wantSectionID = sectionIDs[strings.ToLower(sectionName)]
 		}
 
 		found := false
 		for i := range fullItem.Fields {
-			if strings.EqualFold(fullItem.Fields[i].Title, label) {
-				fullItem.Fields[i].Value = value
-				found = true
-				break
+			if !strings.EqualFold(fullItem.Fields[i].Title, fieldTitle) {
+				continue
 			}
+			if wantSectionID != "" && (fullItem.Fields[i].SectionID == nil || !strings.EqualFold(*fullItem.Fields[i].SectionID, wantSectionID)) {
+				continue
+			}
+			fullItem.Fields[i].Value = value
+			found = true
+			break
 		}
 		if !found {
-			// Add as a new text field
-			fullItem.Fields = append(fullItem.Fields, onepassword.ItemField{
-				Title:     label,
+			newField := onepassword.ItemField{
+				Title:     fieldTitle,
 				Value:     value,
-				FieldType: onepassword.ItemFieldTypeText,
-			})
+				FieldType: fieldType,
+			}
+			if wantSectionID != "" {
+				newField.SectionID = &wantSectionID
+			}
+			fullItem.Fields = append(fullItem.Fields, newField)
 		}
 	}
 
