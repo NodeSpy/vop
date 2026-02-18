@@ -23,10 +23,16 @@ func newShellCmd() *cobra.Command {
 		RunE:  cmdShell,
 	}
 	cmd.Flags().Bool("no-refresh", false, "Disable automatic credential refresh")
+	cmd.Flags().BoolP("quiet", "q", false, "Suppress all informational output")
 	return cmd
 }
 
 func cmdShell(cmd *cobra.Command, args []string) error {
+	quiet, _ := cmd.Flags().GetBool("quiet")
+	if quiet {
+		ui.Quiet = true
+	}
+
 	c, err := loadConfig()
 	if err != nil {
 		return err

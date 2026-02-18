@@ -23,6 +23,21 @@ func newExecCmd() *cobra.Command {
 }
 
 func cmdExec(_ *cobra.Command, args []string) error {
+	// DisableFlagParsing is set, so we handle -q/--quiet manually.
+	var filtered []string
+	for _, a := range args {
+		if a == "-q" || a == "--quiet" {
+			ui.Quiet = true
+		} else {
+			filtered = append(filtered, a)
+		}
+	}
+	args = filtered
+
+	if len(args) < 2 {
+		return fmt.Errorf("usage: vop exec [-q] <profile> [--] <command...>")
+	}
+
 	c, err := loadConfig()
 	if err != nil {
 		return err
