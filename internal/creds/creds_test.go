@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -16,11 +17,22 @@ func TestRuntimeDir(t *testing.T) {
 		t.Errorf("expected '/tmp/test-runtime/vop', got %q", got)
 	}
 
-	// Without XDG_RUNTIME_DIR, falls back to /run/user/<uid>
+	// Without XDG_RUNTIME_DIR, falls back to platform-specific path
 	t.Setenv("XDG_RUNTIME_DIR", "")
 	got = RuntimeDir()
-	if !strings.HasPrefix(got, "/run/user/") || !strings.HasSuffix(got, "/vop") {
-		t.Errorf("expected /run/user/<uid>/vop pattern, got %q", got)
+	switch runtime.GOOS {
+	case "linux":
+		if !strings.HasPrefix(got, "/run/user/") || !strings.HasSuffix(got, "/vop") {
+			t.Errorf("expected /run/user/<uid>/vop pattern, got %q", got)
+		}
+	case "darwin":
+		if !strings.Contains(got, "vop-") || !strings.HasSuffix(got, "/vop") {
+			t.Errorf("expected <tmpdir>/vop-<uid>/vop pattern, got %q", got)
+		}
+	default:
+		if !strings.HasSuffix(got, "/vop") {
+			t.Errorf("expected path ending in /vop, got %q", got)
+		}
 	}
 }
 

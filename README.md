@@ -12,7 +12,7 @@ AWS credential management via 1Password. Spawn shells and run commands with AWS 
   - **CLI backend**: uses the `op` CLI binary (interactive auth, biometric)
   - **SDK backend**: uses the 1Password Go SDK with a service account token (no `op` binary needed)
 - **No external dependencies** for SDK-backend profiles — the AWS SDK for Go v2 replaces the `aws` CLI, so the binary is fully self-contained
-- **Credential files on tmpfs** at `/run/user/$UID/vop/` for external tool access, cleaned up on exit
+- **Credential files** in a secure per-user directory (`/run/user/$UID/vop/` on Linux, `$TMPDIR/vop-$UID/vop/` on macOS), cleaned up on exit
 - **Backward compatible** with Vaulted — sets both `VOP_PROFILE` and `VAULTED_ENV`
 
 ## Install

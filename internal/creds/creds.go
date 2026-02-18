@@ -24,11 +24,13 @@ type AWSCredentials struct {
 	Expiration      string `json:"Expiration,omitempty"`
 }
 
-// RuntimeDir returns the tmpfs directory for credential files.
+// RuntimeDir returns the secure, per-user directory for credential files.
+// On Linux this is typically a tmpfs mount at /run/user/<uid>.
+// On macOS it falls back to a per-user directory under os.TempDir().
 func RuntimeDir() string {
 	xdg := os.Getenv("XDG_RUNTIME_DIR")
 	if xdg == "" {
-		xdg = fmt.Sprintf("/run/user/%d", os.Getuid())
+		xdg = runtimeDirFallback()
 	}
 	return filepath.Join(xdg, "vop")
 }
