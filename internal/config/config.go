@@ -35,6 +35,11 @@ type Profile struct {
 	// ServiceAccountToken enables the 1Password SDK backend instead of the
 	// op CLI. When set, OPVault is required and OPAccount is ignored.
 	ServiceAccountToken string `json:"service_account_token,omitempty"`
+
+	// AgentPolicy controls the instructions given to AI agents via
+	// 'vop agent'. Values: "readonly" (default), "full", or a custom
+	// string. When empty, defaults to "readonly".
+	AgentPolicy string `json:"agent_policy,omitempty"`
 }
 
 // FieldName returns the 1Password field label for a given base name.
@@ -199,4 +204,30 @@ func (c *Config) SetProfile(name string, p *Profile) {
 // DeleteProfile removes a profile by name.
 func (c *Config) DeleteProfile(name string) {
 	delete(c.Profiles, name)
+}
+
+// AgentInstructions returns the agent policy instruction text for this profile.
+// Defaults to read-only if no policy is configured.
+func (p *Profile) AgentInstructions() string {
+	policy := p.AgentPolicy
+	if policy == "" {
+		policy = "readonly"
+	}
+
+	switch policy {
+	case "readonly":
+		return "IMPORTANT: These AWS credentials must be used for READ-ONLY operations " +
+			"only. Do NOT create, modify, or delete any AWS resources unless you have " +
+			"been explicitly granted permission by the user for a specific operation. " +
+			"If you need to perform a write operation, ask the user for permission first " +
+			"and explain what you intend to do."
+	case "full":
+		return "These AWS credentials have been granted full access. You may perform " +
+			"read and write operations as needed to complete the task. Exercise " +
+			"caution with destructive operations (delete, terminate, etc.) and " +
+			"confirm with the user before proceeding with irreversible changes."
+	default:
+		// Custom policy string provided by the user.
+		return policy
+	}
 }
