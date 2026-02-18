@@ -27,6 +27,12 @@ type Client interface {
 	// CreateItem creates a new 1Password item.
 	CreateItem(account, vault, category, title, tags string, assignments ...string) error
 
+	// ListItems returns items in a vault for a given account.
+	ListItems(account, vault string) ([]OPItem, error)
+
+	// ListFields returns the field labels on a 1Password item.
+	ListFields(account, item string) ([]OPField, error)
+
 	// IsInstalled reports whether the backend is available.
 	IsInstalled() bool
 }
@@ -41,4 +47,17 @@ type OPAccount struct {
 type OPVault struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+// OPItem represents a 1Password item (summary).
+type OPItem struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Category string `json:"category"`
+}
+
+// OPField represents a field on a 1Password item.
+type OPField struct {
+	Label string `json:"label"`
+	Type  string `json:"type"` // e.g. "STRING", "CONCEALED"
 }

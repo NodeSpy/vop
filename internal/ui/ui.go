@@ -19,11 +19,21 @@ const (
 	Reset  = "\033[0m"
 )
 
+// Quiet suppresses all informational output (Info, Warn, Success).
+// Error output is never suppressed. Used by credential_process mode.
+var Quiet bool
+
 func Info(msg string, args ...any) {
+	if Quiet {
+		return
+	}
 	fmt.Printf(Green+">>>"+Reset+" "+msg+"\n", args...)
 }
 
 func Warn(msg string, args ...any) {
+	if Quiet {
+		return
+	}
 	fmt.Fprintf(os.Stderr, Yellow+">>>"+Reset+" "+msg+"\n", args...)
 }
 
@@ -32,6 +42,9 @@ func Error(msg string, args ...any) {
 }
 
 func Success(msg string, args ...any) {
+	if Quiet {
+		return
+	}
 	fmt.Printf(Green+" ok"+Reset+" "+msg+"\n", args...)
 }
 

@@ -144,6 +144,65 @@ func (s *SDKClient) ListVaults(_ string) ([]OPVault, error) {
 	return result, nil
 }
 
+func (s *SDKClient) ListItems(_, vault string) ([]OPItem, error) {
+	if vault == "" {
+		vault = s.vault
+	}
+	vaultID, err := s.resolveVaultIDByName(vault)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.inner.Items().List(context.Background(), vaultID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]OPItem, len(items))
+	for i, it := range items {
+		result[i] = OPItem{ID: it.ID, Title: it.Title, Category: string(it.Category)}
+	}
+	return result, nil
+}
+
+func (s *SDKClient) ListFields(_, item string) ([]OPField, error) {
+	vaultID, err := s.resolveVaultID()
+	if err != nil {
+		return nil, err
+	}
+
+	items, err := s.inner.Items().List(context.Background(), vaultID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list items: %w", err)
+	}
+
+	var itemID string
+	for _, it := range items {
+		if it.Title == item {
+			itemID = it.ID
+			break
+		}
+	}
+	if itemID == "" {
+		return nil, fmt.Errorf("item %q not found in vault %q", item, s.vault)
+	}
+
+	fullItem, err := s.inner.Items().Get(context.Background(), vaultID, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get item %q: %w", item, err)
+	}
+
+	var fields []OPField
+	for _, f := range fullItem.Fields {
+		if f.Title == "" {
+			continue
+		}
+		fields = append(fields, OPField{
+			Label: f.Title,
+			Type:  string(f.FieldType),
+		})
+	}
+	return fields, nil
+}
+
 func (s *SDKClient) CreateItem(_, vault, category, title, tags string, assignments ...string) error {
 	if vault == "" {
 		vault = s.vault

@@ -18,9 +18,38 @@ type Profile struct {
 	MFATOTPItem string `json:"mfa_totp_item,omitempty"`
 	IAMUsername string `json:"iam_username,omitempty"`
 
+	// FieldPrefix is prepended to 1Password field labels when reading/writing
+	// AWS credentials. For example, "vop." means fields are stored as
+	// "vop.access key id" instead of "access key id". Empty means no prefix
+	// (use the bare field names, e.g. for existing items with standard fields).
+	// Ignored for any field that has an explicit mapping in FieldMap.
+	FieldPrefix string `json:"field_prefix,omitempty"`
+
+	// FieldMap stores explicit 1Password field label overrides, keyed by the
+	// vop base name. For example: {"access key id": "AWS Access Key"} means
+	// vop reads/writes the field labeled "AWS Access Key" instead of applying
+	// the prefix. Only mapped fields are overridden; unmapped fields still
+	// use FieldPrefix.
+	FieldMap map[string]string `json:"field_map,omitempty"`
+
 	// ServiceAccountToken enables the 1Password SDK backend instead of the
 	// op CLI. When set, OPVault is required and OPAccount is ignored.
 	ServiceAccountToken string `json:"service_account_token,omitempty"`
+}
+
+// FieldName returns the 1Password field label for a given base name.
+// It checks FieldMap first for an explicit override, then falls back to
+// prepending FieldPrefix (if set), and finally returns the bare base name.
+func (p *Profile) FieldName(base string) string {
+	if p.FieldMap != nil {
+		if mapped, ok := p.FieldMap[base]; ok {
+			return mapped
+		}
+	}
+	if p.FieldPrefix == "" {
+		return base
+	}
+	return p.FieldPrefix + base
 }
 
 // UsesSDK returns true if this profile is configured with a service account

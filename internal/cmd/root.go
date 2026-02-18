@@ -25,7 +25,7 @@ func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "vop",
 		Short: "AWS credential management via 1Password",
-		Long:  "vop — spawn shells and run commands with AWS credentials fetched from 1Password.",
+		Long:  "vop -- spawn shells and run commands with AWS credentials fetched from 1Password.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// No args: list profiles. If a profile name is given as the only
 			// arg, treat it as `vop shell <profile>` (vaulted-style shorthand).
@@ -51,6 +51,9 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newCheckCmd())
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newUpdateCmd())
+	root.AddCommand(newRefreshCmd())
+	root.AddCommand(newCredProcessCmd())
+	root.AddCommand(newAgentCmd())
 
 	return root
 }
@@ -64,7 +67,7 @@ func Execute() {
 	if len(os.Args) > 1 {
 		_, _, err := root.Find(os.Args[1:])
 		if err != nil {
-			// Not a known command — check if it's a profile name
+			// Not a known command -- check if it's a profile name
 			profileName := os.Args[1]
 			path := configFilePath()
 			if c, loadErr := config.Load(path); loadErr == nil && c.ProfileExists(profileName) {

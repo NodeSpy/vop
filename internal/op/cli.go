@@ -37,10 +37,11 @@ func (c *ExecCommander) RunPassthrough(args ...string) error {
 
 func (c *ExecCommander) RunInteractive(args ...string) (string, error) {
 	cmd := exec.Command("op", args...)
-	// Don't set Stdin — op signin reads passwords from /dev/tty directly.
+	// Connect stdin so op can read the password from the terminal.
+	cmd.Stdin = os.Stdin
 	// Stderr goes to the terminal so the user sees prompts/errors.
 	cmd.Stderr = os.Stderr
-	// Capture stdout where op writes the session token export.
+	// Capture stdout where op writes the session token.
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
 }
@@ -67,33 +68,33 @@ func (c *CLIClient) EnsureSignedIn(account string) error {
 		return nil
 	}
 
-	// Try desktop-app-integrated signin first (biometric/system auth).
-	// This is the default modern setup where op connects to the 1Password app.
+	// Try standalone signin with --raw first. This prompts for the master
+	// password on the terminal and returns just the session token on stdout.
+	// This is the correct path when there is no 1Password desktop app.
+	out, rawErr := c.Cmd.RunInteractive("signin", "--account", account, "--raw")
+	if rawErr == nil {
+		token := strings.TrimSpace(out)
+		if token != "" {
+			// Set OP_SESSION_<shorthand> so subsequent op commands are
+			// authenticated within this process.
+			shorthand := account
+			if idx := strings.Index(shorthand, "."); idx > 0 {
+				shorthand = shorthand[:idx]
+			}
+			shorthand = strings.NewReplacer(".", "_", "-", "_").Replace(shorthand)
+			os.Setenv("OP_SESSION_"+shorthand, token)
+		}
+		return nil
+	}
+
+	// --raw failed — try desktop app integration (biometric/system auth).
+	// In this mode, op communicates with the 1Password app directly and
+	// there is no session token to capture.
 	if passthroughErr := c.Cmd.RunPassthrough("signin", "--account", account); passthroughErr == nil {
 		return nil
 	}
 
-	// Desktop app signin failed — fall back to standalone mode with --raw.
-	// This captures the session token from stdout and sets it in the
-	// environment so subsequent op commands are authenticated.
-	out, signInErr := c.Cmd.RunInteractive("signin", "--account", account, "--raw")
-	if signInErr != nil {
-		return fmt.Errorf("failed to sign in to 1Password account %q.\n  Make sure the account is added: op account add --address %s\n  Then try again, or use a service account token instead", account, account)
-	}
-
-	token := strings.TrimSpace(out)
-	if token != "" {
-		// The env var is OP_SESSION_<shorthand> where shorthand is derived
-		// from the account address (e.g. "ednition" from "ednition.1password.com").
-		shorthand := account
-		if idx := strings.Index(shorthand, "."); idx > 0 {
-			shorthand = shorthand[:idx]
-		}
-		shorthand = strings.NewReplacer(".", "_", "-", "_").Replace(shorthand)
-		os.Setenv("OP_SESSION_"+shorthand, token)
-	}
-
-	return nil
+	return fmt.Errorf("failed to sign in to 1Password account %q.\n  Make sure the account is added: op account add --address %s\n  Then try again, or use a service account token instead", account, account)
 }
 
 func (c *CLIClient) ReadField(account, item, field string) (string, error) {
@@ -160,4 +161,55 @@ func (c *CLIClient) CreateItem(account, vault, category, title, tags string, ass
 	args = append(args, assignments...)
 	_, err := c.Cmd.Run(args...)
 	return err
+}
+
+func (c *CLIClient) ListItems(account, vault string) ([]OPItem, error) {
+	args := []string{"item", "list", "--account", account, "--format=json"}
+	if vault != "" {
+		args = append(args, "--vault", vault)
+	}
+	out, err := c.Cmd.Run(args...)
+	if err != nil {
+		return nil, err
+	}
+	var items []OPItem
+	if err := json.Unmarshal([]byte(out), &items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (c *CLIClient) ListFields(account, item string) ([]OPField, error) {
+	out, err := c.Cmd.Run("item", "get", item, "--account", account, "--format=json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get item %q: %w", item, err)
+	}
+
+	// op item get --format=json returns an object with a "fields" array.
+	// Each field has "label", "type", and possibly "value".
+	var raw struct {
+		Fields []struct {
+			Label   string `json:"label"`
+			Type    string `json:"type"`
+			Purpose string `json:"purpose"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse item JSON: %w", err)
+	}
+
+	var fields []OPField
+	for _, f := range raw.Fields {
+		// Skip internal/purpose fields (username, password built-ins)
+		// that have no user-assigned label, but include them if they
+		// have a label the user might want to map.
+		if f.Label == "" {
+			continue
+		}
+		fields = append(fields, OPField{
+			Label: f.Label,
+			Type:  f.Type,
+		})
+	}
+	return fields, nil
 }

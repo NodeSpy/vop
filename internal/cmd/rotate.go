@@ -44,11 +44,11 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 
 	// 1. Fetch current credentials
 	ui.Info("Fetching current credentials from: %s", profile.OPItem)
-	oldAK, err := client.ReadField(profile.OPAccount, profile.OPItem, "access key id")
+	oldAK, err := client.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("access key id"))
 	if err != nil {
 		return err
 	}
-	oldSK, err := client.ReadField(profile.OPAccount, profile.OPItem, "secret access key")
+	oldSK, err := client.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("secret access key"))
 	if err != nil {
 		return err
 	}
@@ -71,8 +71,8 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 	// 3. Update 1Password
 	ui.Info("Updating 1Password item...")
 	err = client.EditItem(profile.OPAccount, profile.OPItem,
-		"access key id="+newAK,
-		"secret access key="+newSK,
+		profile.FieldName("access key id")+"="+newAK,
+		profile.FieldName("secret access key")+"="+newSK,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update 1Password item: %w", err)
@@ -91,8 +91,8 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 		ui.Warn("Rolling back 1Password...")
 
 		_ = client.EditItem(profile.OPAccount, profile.OPItem,
-			"access key id="+oldAK,
-			"secret access key="+oldSK,
+			profile.FieldName("access key id")+"="+oldAK,
+			profile.FieldName("secret access key")+"="+oldSK,
 		)
 
 		ui.Warn("Deleting failed key: %s", newAK)

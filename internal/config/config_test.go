@@ -304,3 +304,95 @@ func TestProfileWithNewFields(t *testing.T) {
 		t.Error("expected UsesSDK()=false for cli-profile")
 	}
 }
+
+func TestFieldName_NoPrefix(t *testing.T) {
+	p := &Profile{OPAccount: "acct", OPItem: "item"}
+	if got := p.FieldName("access key id"); got != "access key id" {
+		t.Errorf("expected 'access key id', got %q", got)
+	}
+}
+
+func TestFieldName_WithPrefix(t *testing.T) {
+	p := &Profile{OPAccount: "acct", OPItem: "item", FieldPrefix: "vop."}
+	if got := p.FieldName("access key id"); got != "vop.access key id" {
+		t.Errorf("expected 'vop.access key id', got %q", got)
+	}
+}
+
+func TestFieldName_FieldMapOverridesPrefix(t *testing.T) {
+	p := &Profile{
+		OPAccount:   "acct",
+		OPItem:      "item",
+		FieldPrefix: "vop.",
+		FieldMap: map[string]string{
+			"access key id": "AWS Access Key",
+		},
+	}
+	// Mapped field should use the map, not the prefix
+	if got := p.FieldName("access key id"); got != "AWS Access Key" {
+		t.Errorf("expected 'AWS Access Key', got %q", got)
+	}
+	// Unmapped field should still use the prefix
+	if got := p.FieldName("secret access key"); got != "vop.secret access key" {
+		t.Errorf("expected 'vop.secret access key', got %q", got)
+	}
+}
+
+func TestFieldName_FieldMapNoPrefix(t *testing.T) {
+	p := &Profile{
+		OPAccount: "acct",
+		OPItem:    "item",
+		FieldMap: map[string]string{
+			"access key id":     "my-key",
+			"secret access key": "my-secret",
+		},
+	}
+	if got := p.FieldName("access key id"); got != "my-key" {
+		t.Errorf("expected 'my-key', got %q", got)
+	}
+	if got := p.FieldName("secret access key"); got != "my-secret" {
+		t.Errorf("expected 'my-secret', got %q", got)
+	}
+	// Unmapped field with no prefix returns bare name
+	if got := p.FieldName("mfa serial"); got != "mfa serial" {
+		t.Errorf("expected 'mfa serial', got %q", got)
+	}
+}
+
+func TestFieldMapSerialization(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profiles.json")
+
+	cfg := &Config{
+		Profiles: map[string]*Profile{
+			"mapped": {
+				OPAccount: "acct",
+				OPItem:    "item",
+				FieldMap: map[string]string{
+					"access key id":     "AWS Access Key",
+					"secret access key": "AWS Secret Key",
+				},
+			},
+		},
+	}
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := loaded.Profiles["mapped"]
+	if p.FieldMap == nil {
+		t.Fatal("expected FieldMap to be non-nil after load")
+	}
+	if p.FieldMap["access key id"] != "AWS Access Key" {
+		t.Errorf("expected 'AWS Access Key', got %q", p.FieldMap["access key id"])
+	}
+	if got := p.FieldName("access key id"); got != "AWS Access Key" {
+		t.Errorf("expected FieldName to return 'AWS Access Key', got %q", got)
+	}
+}

@@ -85,10 +85,13 @@ func TestEnsureSignedIn_AlreadySignedIn(t *testing.T) {
 }
 
 func TestEnsureSignedIn_DesktopApp(t *testing.T) {
-	// Desktop app integration: account get fails, passthrough signin succeeds.
+	// Desktop app integration: account get fails, --raw fails, passthrough succeeds.
 	mock := &mockCommander{
 		RunFunc: func(args ...string) (string, error) {
 			return "", fmt.Errorf("not signed in")
+		},
+		RunInteractiveFunc: func(args ...string) (string, error) {
+			return "", fmt.Errorf("not supported in app mode")
 		},
 		RunPassthroughFunc: func(args ...string) error {
 			return nil // desktop app auth succeeds
@@ -100,24 +103,21 @@ func TestEnsureSignedIn_DesktopApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should have called: Run(account get), RunPassthrough(signin)
-	if len(mock.Calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(mock.Calls))
+	// Should have called: Run(account get), RunInteractive(signin --raw), RunPassthrough(signin)
+	if len(mock.Calls) != 3 {
+		t.Fatalf("expected 3 calls, got %d", len(mock.Calls))
 	}
-	args := mock.Calls[1]
+	args := mock.Calls[2]
 	if args[0] != "signin" {
 		t.Errorf("expected 'signin', got %v", args[0])
 	}
 }
 
 func TestEnsureSignedIn_Standalone(t *testing.T) {
-	// Standalone mode: account get fails, passthrough fails, --raw succeeds.
+	// Standalone mode: account get fails, --raw succeeds.
 	mock := &mockCommander{
 		RunFunc: func(args ...string) (string, error) {
 			return "", fmt.Errorf("not signed in")
-		},
-		RunPassthroughFunc: func(args ...string) error {
-			return fmt.Errorf("operation not supported by device")
 		},
 		RunInteractiveFunc: func(args ...string) (string, error) {
 			return "fake-session-token", nil
@@ -129,11 +129,11 @@ func TestEnsureSignedIn_Standalone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should have called: Run(account get), RunPassthrough(signin), RunInteractive(signin --raw)
-	if len(mock.Calls) != 3 {
-		t.Fatalf("expected 3 calls, got %d", len(mock.Calls))
+	// Should have called: Run(account get), RunInteractive(signin --raw)
+	if len(mock.Calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(mock.Calls))
 	}
-	args := mock.Calls[2]
+	args := mock.Calls[1]
 	if args[0] != "signin" {
 		t.Errorf("expected 'signin', got %v", args[0])
 	}
@@ -152,9 +152,6 @@ func TestEnsureSignedIn_SetsSessionEnv(t *testing.T) {
 	mock := &mockCommander{
 		RunFunc: func(args ...string) (string, error) {
 			return "", fmt.Errorf("not signed in")
-		},
-		RunPassthroughFunc: func(args ...string) error {
-			return fmt.Errorf("not supported")
 		},
 		RunInteractiveFunc: func(args ...string) (string, error) {
 			return "test-session-token-123", nil

@@ -70,16 +70,59 @@ func cmdAdd(_ *cobra.Command, args []string) error {
 
 	mfaTOTPItem := ""
 	if ui.PromptYN("Configure MFA/TOTP?", false) {
-		mfaTOTPItem = ui.Prompt("1Password item containing TOTP", "")
+		totpOptions := []string{
+			"Same item (" + opItem + ")",
+			"Different item",
+		}
+		totpChoice, totpErr := ui.Select("Where is the TOTP seed?", totpOptions)
+		if totpErr != nil {
+			return totpErr
+		}
+		if totpChoice == totpOptions[0] {
+			mfaTOTPItem = opItem
+		} else {
+			mfaTOTPItem = ui.Prompt("1Password item containing TOTP", "")
+		}
 	}
 
 	iamUsername := ui.Prompt("IAM username (blank = caller identity)", "")
+
+	fmt.Println()
+	fieldOptions := []string{
+		"Use vop-prefixed field names (recommended)",
+		"Use standard field names (no prefix)",
+		"Map custom field names on the item",
+	}
+	fieldChoice, fieldErr := ui.Select("How are credential fields named?", fieldOptions)
+	if fieldErr != nil {
+		return fieldErr
+	}
+
+	fieldPrefix := ""
+	var fieldMap map[string]string
+
+	switch fieldChoice {
+	case fieldOptions[0]:
+		fieldPrefix = "vop."
+	case fieldOptions[1]:
+		fieldPrefix = ""
+	case fieldOptions[2]:
+		fieldMap = make(map[string]string)
+		fieldMap["access key id"] = ui.Prompt("Field name for access key ID", "access key id")
+		fieldMap["secret access key"] = ui.Prompt("Field name for secret access key", "secret access key")
+		mfaField := ui.Prompt("Field name for MFA serial (blank to skip)", "")
+		if mfaField != "" {
+			fieldMap["mfa serial"] = mfaField
+		}
+	}
 
 	profile := &config.Profile{
 		OPAccount:           opAccount,
 		OPItem:              opItem,
 		OPVault:             opVault,
 		Description:         description,
+		FieldPrefix:         fieldPrefix,
+		FieldMap:            fieldMap,
 		MFATOTPItem:         mfaTOTPItem,
 		IAMUsername:         iamUsername,
 		ServiceAccountToken: serviceAccountToken,

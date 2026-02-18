@@ -51,7 +51,7 @@ func TestNewRootCmd_HasAllSubcommands(t *testing.T) {
 	expected := []string{
 		"ls", "shell", "exec", "add", "edit", "rm",
 		"show", "dump", "rotate", "test", "migrate", "check",
-		"version", "update",
+		"version", "update", "refresh", "cred-process", "agent",
 	}
 
 	commands := make(map[string]bool)
@@ -265,6 +265,8 @@ func (m *mockClient) EditItem(_ string, _ string, _ ...string) error     { retur
 func (m *mockClient) ListAccounts() ([]op.OPAccount, error)              { return nil, nil }
 func (m *mockClient) ListVaults(_ string) ([]op.OPVault, error)          { return nil, nil }
 func (m *mockClient) CreateItem(_, _, _, _, _ string, _ ...string) error { return nil }
+func (m *mockClient) ListItems(_, _ string) ([]op.OPItem, error)         { return nil, nil }
+func (m *mockClient) ListFields(_, _ string) ([]op.OPField, error)       { return nil, nil }
 
 func TestGetClientForProfile_CLI(t *testing.T) {
 	// Inject a mock so the test works even without op installed.

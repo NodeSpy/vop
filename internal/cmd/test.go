@@ -51,10 +51,10 @@ func cmdTest(_ *cobra.Command, args []string) error {
 	ui.Success("Signed into 1Password: %s", profile.OPAccount)
 
 	// Item access
-	ak, err := client.ReadField(profile.OPAccount, profile.OPItem, "access key id")
+	ak, err := client.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("access key id"))
 	if err != nil {
 		ui.Error("Cannot read item '%s' from '%s'", profile.OPItem, profile.OPAccount)
-		ui.Warn("Check the item name and that it has an 'access key id' field.")
+		ui.Warn("Check the item name and that it has a '%s' field.", profile.FieldName("access key id"))
 		return err
 	}
 	ui.Success("Can read item: %s", profile.OPItem)
@@ -72,7 +72,7 @@ func cmdTest(_ *cobra.Command, args []string) error {
 
 	// AWS credentials
 	ui.Info("Testing AWS credentials...")
-	sk, err := client.ReadField(profile.OPAccount, profile.OPItem, "secret access key")
+	sk, err := client.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("secret access key"))
 	if err != nil {
 		return err
 	}

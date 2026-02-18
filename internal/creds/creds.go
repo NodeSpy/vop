@@ -42,11 +42,11 @@ func Fetch(profile *config.Profile, profileName string, opClient op.Client) (*AW
 
 	ui.Info("Fetching credentials from: %s", profile.OPItem)
 
-	accessKey, err := opClient.ReadField(profile.OPAccount, profile.OPItem, "access key id")
+	accessKey, err := opClient.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("access key id"))
 	if err != nil {
 		return nil, err
 	}
-	secretKey, err := opClient.ReadField(profile.OPAccount, profile.OPItem, "secret access key")
+	secretKey, err := opClient.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("secret access key"))
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func Fetch(profile *config.Profile, profileName string, opClient op.Client) (*AW
 			return nil, err
 		}
 
-		serialNumber, _ := opClient.ReadField(profile.OPAccount, profile.OPItem, "mfa serial")
+		serialNumber, _ := opClient.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("mfa serial"))
 		if serialNumber == "" {
 			ui.Info("Looking up MFA serial via AWS IAM...")
 			serialNumber, err = awsclient.ListMFADevices(
