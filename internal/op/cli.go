@@ -67,17 +67,20 @@ func (c *CLIClient) EnsureSignedIn(account string) error {
 		return nil
 	}
 
-	// Not signed in — try interactive sign-in.
-	// Use --raw to get just the session token on stdout. The op CLI reads
-	// the password from /dev/tty, so the user can still type their password
-	// even though we are capturing stdout.
+	// Try desktop-app-integrated signin first (biometric/system auth).
+	// This is the default modern setup where op connects to the 1Password app.
+	if passthroughErr := c.Cmd.RunPassthrough("signin", "--account", account); passthroughErr == nil {
+		return nil
+	}
+
+	// Desktop app signin failed — fall back to standalone mode with --raw.
+	// This captures the session token from stdout and sets it in the
+	// environment so subsequent op commands are authenticated.
 	out, signInErr := c.Cmd.RunInteractive("signin", "--account", account, "--raw")
 	if signInErr != nil {
 		return fmt.Errorf("failed to sign in to 1Password account %q.\n  Make sure the account is added: op account add --address %s\n  Then try again, or use a service account token instead", account, account)
 	}
 
-	// --raw outputs just the session token. Set it in the environment so
-	// subsequent op commands in this process are authenticated.
 	token := strings.TrimSpace(out)
 	if token != "" {
 		// The env var is OP_SESSION_<shorthand> where shorthand is derived
