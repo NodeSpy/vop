@@ -50,7 +50,9 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newMigrateCmd())
 	root.AddCommand(newCheckCmd())
 	root.AddCommand(newVersionCmd())
-	root.AddCommand(newUpdateCmd())
+	if cmd := newUpdateCmd(); cmd != nil {
+		root.AddCommand(cmd)
+	}
 	root.AddCommand(newRefreshCmd())
 	root.AddCommand(newCredProcessCmd())
 	root.AddCommand(newAgentCmd())

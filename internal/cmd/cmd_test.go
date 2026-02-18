@@ -48,10 +48,11 @@ func TestNewRootCmd(t *testing.T) {
 func TestNewRootCmd_HasAllSubcommands(t *testing.T) {
 	root := NewRootCmd()
 
+	// Core commands that are always present.
 	expected := []string{
 		"ls", "shell", "exec", "add", "edit", "rm",
 		"show", "dump", "rotate", "test", "migrate", "check",
-		"version", "update", "refresh", "cred-process", "agent",
+		"version", "refresh", "cred-process", "agent",
 	}
 
 	commands := make(map[string]bool)
@@ -63,6 +64,15 @@ func TestNewRootCmd_HasAllSubcommands(t *testing.T) {
 		if !commands[name] {
 			t.Errorf("missing subcommand: %s", name)
 		}
+	}
+
+	// "update" is conditionally compiled via build tag "noupdate".
+	// In the default build it should be present.
+	if newUpdateCmd() != nil && !commands["update"] {
+		t.Errorf("newUpdateCmd() returned non-nil but 'update' subcommand not registered")
+	}
+	if newUpdateCmd() == nil && commands["update"] {
+		t.Errorf("newUpdateCmd() returned nil but 'update' subcommand is registered")
 	}
 }
 

@@ -29,7 +29,7 @@ This detects your OS and architecture, downloads the correct binary, and install
 VOP_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
 ```
 
-### Homebrew
+### Homebrew (macOS and Linux)
 
 ```bash
 brew tap NodeSpy/vop https://github.com/NodeSpy/vop
@@ -40,6 +40,24 @@ To upgrade:
 
 ```bash
 brew upgrade vop
+```
+
+### Nix
+
+```bash
+# Run directly
+nix run github:NodeSpy/vop
+
+# Install to profile
+nix profile install github:NodeSpy/vop
+
+# Or add to your flake inputs
+```
+
+A `flake.nix` is included in the repo. A dev shell is also available:
+
+```bash
+nix develop github:NodeSpy/vop
 ```
 
 ### Manual download
@@ -176,17 +194,20 @@ The token is stored in `~/.config/vop/profiles.json` which is chmod 600 and shou
 | Command | Description |
 |---|---|
 | `vop ls` | List configured profiles |
-| `vop shell <profile>` | Open a shell with AWS credentials |
+| `vop shell [profile]` | Open a shell with AWS credentials (picker if no arg) |
 | `vop <profile>` | Shorthand for `vop shell <profile>` |
 | `vop exec <profile> -- <cmd>` | Run a command with credentials |
-| `vop add <profile>` | Add a new profile |
+| `vop refresh [profile]` | Refresh credentials in an active shell |
+| `vop cred-process <profile>` | Output credentials for AWS `credential_process` |
+| `vop agent [profile]` | Show credential paths for AI agents / external tools |
+| `vop add [profile]` | Add a new profile |
 | `vop edit <profile>` | Edit an existing profile |
 | `vop rm <profile>` | Remove a profile |
 | `vop show <profile>` | Show profile configuration |
-| `vop dump <profile>` | Dump raw credentials |
+| `vop dump [profile]` | Dump raw credentials |
 | `vop test <profile>` | Test credentials with STS |
 | `vop rotate <profile>` | Rotate IAM access keys |
-| `vop migrate <profile>` | Migrate from Vaulted |
+| `vop migrate [vault]` | Migrate from Vaulted |
 | `vop check` | Check prerequisites and configuration |
 | `vop version` | Print version information |
 | `vop update` | Update to the latest version |

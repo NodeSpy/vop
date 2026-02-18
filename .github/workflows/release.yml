@@ -68,7 +68,7 @@ jobs:
           LDFLAGS="${LDFLAGS} -X github.com/NodeSpy/vop/internal/version.Date=${DATE}"
 
           mkdir -p dist
-          go build -ldflags "${LDFLAGS}" -o "dist/vop-${{ matrix.os }}-${{ matrix.arch }}" .
+          go build -tags noupdate -ldflags "${LDFLAGS}" -o "dist/vop-${{ matrix.os }}-${{ matrix.arch }}" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -178,3 +178,75 @@ jobs:
             echo "Push failed (attempt $i), rebasing and retrying..."
             git pull --rebase origin main
           done
+
+  aur:
+    name: Publish to AUR
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare checksums
+        run: |
+          mkdir -p release
+          for dir in artifacts/vop-*; do
+            binary=$(basename "$dir")
+            cp "$dir/$binary" "release/$binary"
+          done
+
+      - name: Generate PKGBUILD
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          TAG="${GITHUB_REF_NAME}"
+          SHA_LINUX_AMD64=$(sha256sum release/vop-linux-amd64 | awk '{print $1}')
+          SHA_LINUX_ARM64=$(sha256sum release/vop-linux-arm64 | awk '{print $1}')
+          SHA_LICENSE=$(curl -fsSL "https://github.com/NodeSpy/vop/raw/${TAG}/LICENSE" | sha256sum | awk '{print $1}')
+
+          cat > PKGBUILD << EOF
+          # Maintainer: Daniel Baldwin <daniel@baldwin.io>
+          pkgname=vop-bin
+          pkgver=${VERSION}
+          pkgrel=1
+          pkgdesc="AWS credential management via 1Password"
+          arch=('x86_64' 'aarch64')
+          url="https://github.com/NodeSpy/vop"
+          license=('MIT')
+          provides=('vop')
+          conflicts=('vop')
+
+          source_x86_64=("\${url}/releases/download/v\${pkgver}/vop-linux-amd64")
+          source_aarch64=("\${url}/releases/download/v\${pkgver}/vop-linux-arm64")
+
+          sha256sums_x86_64=('${SHA_LINUX_AMD64}')
+          sha256sums_aarch64=('${SHA_LINUX_ARM64}')
+
+          source+=("LICENSE-\${pkgver}::\${url}/raw/v\${pkgver}/LICENSE")
+          sha256sums+=('${SHA_LICENSE}')
+
+          package() {
+              install -Dm755 "\${srcdir}/vop-linux-"* "\${pkgdir}/usr/bin/vop"
+              install -Dm644 "\${srcdir}/LICENSE-\${pkgver}" "\${pkgdir}/usr/share/licenses/\${pkgname}/LICENSE"
+          }
+          EOF
+
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' PKGBUILD
+
+          echo "--- Generated PKGBUILD ---"
+          cat PKGBUILD
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: vop-bin
+          pkgbuild: ./PKGBUILD
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ github.ref_name }}"
+          ssh_keyscan_types: rsa,ecdsa,ed25519
