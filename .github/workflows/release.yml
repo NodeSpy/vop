@@ -211,37 +211,12 @@ jobs:
           SHA_LINUX_ARM64=$(sha256sum release/vop-linux-arm64 | awk '{print $1}')
           SHA_LICENSE=$(curl -fsSL "https://github.com/NodeSpy/vop/raw/${TAG}/LICENSE" | sha256sum | awk '{print $1}')
 
-          cat > PKGBUILD << EOF
-          # Maintainer: Daniel Baldwin <daniel@baldwin.io>
-          # Maintainer: Adam Haymond <coastgrd@gmail.com>
-          pkgname=vop-bin
-          pkgver=${VERSION}
-          pkgrel=1
-          pkgdesc="AWS credential management via 1Password"
-          arch=('x86_64' 'aarch64')
-          url="https://github.com/NodeSpy/vop"
-          license=('MIT')
-          depends=('1password-cli')
-          provides=('vop')
-          conflicts=('vop')
-
-          source_x86_64=("\${url}/releases/download/v\${pkgver}/vop-linux-amd64")
-          source_aarch64=("\${url}/releases/download/v\${pkgver}/vop-linux-arm64")
-
-          sha256sums_x86_64=('${SHA_LINUX_AMD64}')
-          sha256sums_aarch64=('${SHA_LINUX_ARM64}')
-
-          source+=("LICENSE-\${pkgver}::\${url}/raw/v\${pkgver}/LICENSE")
-          sha256sums+=('${SHA_LICENSE}')
-
-          package() {
-              install -Dm755 "\${srcdir}/vop-linux-"* "\${pkgdir}/usr/bin/vop"
-              install -Dm644 "\${srcdir}/LICENSE-\${pkgver}" "\${pkgdir}/usr/share/licenses/\${pkgname}/LICENSE"
-          }
-          EOF
-
-          # Remove leading whitespace from heredoc
-          sed -i 's/^          //' PKGBUILD
+          # Use aur/PKGBUILD as the template, substitute version and checksums.
+          cp aur/PKGBUILD PKGBUILD
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
+          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${SHA_LINUX_AMD64}')/" PKGBUILD
+          sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${SHA_LINUX_ARM64}')/" PKGBUILD
+          sed -i "s/^sha256sums+=.*/sha256sums+=('${SHA_LICENSE}')/" PKGBUILD
 
           echo "--- Generated PKGBUILD ---"
           cat PKGBUILD

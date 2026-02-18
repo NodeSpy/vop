@@ -1,9 +1,8 @@
 # Maintainer: Daniel Baldwin <daniel@baldwin.io>
 # Maintainer: Adam Haymond <coastgrd@gmail.com>
 #
-# NOTE: This file is a reference copy. The release workflow generates
-# the actual PKGBUILD with correct checksums and publishes it to AUR
-# automatically via GitHub Actions.
+# NOTE: This file is the PKGBUILD template. The release workflow copies
+# it and substitutes pkgver and checksums before publishing to AUR.
 
 pkgname=vop-bin
 pkgver=0.2.0
