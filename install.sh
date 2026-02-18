@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# vop installer -- detects available package managers and installs
-# the latest release using the best method available.
+# vop installer -- installs or updates vop using the best method
+# available. Auto-detects existing installations and upgrades them
+# via the original package manager.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
@@ -60,13 +61,12 @@ detect_arch() {
 	esac
 }
 
-# --- detect available install methods ---
+# --- detect existing installation ---
 
 is_arch_linux() {
 	[ -f /etc/os-release ] && grep -q '^ID=arch' /etc/os-release 2>/dev/null
 }
 
-# Returns the best AUR helper available, or empty string.
 detect_aur_helper() {
 	for helper in yay paru; do
 		if has_cmd "$helper"; then
@@ -77,8 +77,32 @@ detect_aur_helper() {
 	echo ""
 }
 
+# Returns the method that originally installed vop, or empty string.
+detect_existing() {
+	if ! has_cmd vop; then
+		echo ""
+		return
+	fi
+
+	# Check Homebrew first.
+	if has_cmd brew && brew list vop &>/dev/null 2>&1; then
+		echo "brew"
+		return
+	fi
+
+	# Check AUR (pacman owns the file).
+	if has_cmd pacman && pacman -Qo "$(command -v vop)" &>/dev/null 2>&1; then
+		echo "aur"
+		return
+	fi
+
+	# Installed but not via a package manager -- treat as binary.
+	echo "binary"
+}
+
+# --- detect available install methods ---
+
 detect_methods() {
-	# Returns a space-separated list of available methods.
 	local methods=""
 
 	if has_cmd brew; then
@@ -107,26 +131,35 @@ method_label() {
 	esac
 }
 
-# --- install methods ---
+# --- install/update methods ---
 
 install_brew() {
 	info "Installing via Homebrew..."
 
 	if ! brew tap NodeSpy/vop https://github.com/NodeSpy/vop 2>/dev/null; then
-		# Tap might already exist, that's fine.
 		true
 	fi
 
-	if has_cmd vop && brew list vop &>/dev/null; then
-		info "vop is already installed via Homebrew, upgrading..."
-		brew upgrade vop
-	else
-		brew install vop
-	fi
+	brew install vop
 
 	ok "Installed vop via Homebrew."
 	echo ""
 	info "Upgrade later with: brew upgrade vop"
+}
+
+update_brew() {
+	info "Updating vop via Homebrew..."
+
+	if ! brew tap NodeSpy/vop https://github.com/NodeSpy/vop 2>/dev/null; then
+		true
+	fi
+
+	brew upgrade vop 2>&1 || {
+		# "already installed" is not an error
+		info "Already up to date."
+	}
+
+	ok "vop is up to date (Homebrew)."
 }
 
 install_aur() {
@@ -144,6 +177,21 @@ install_aur() {
 	ok "Installed vop via AUR."
 	echo ""
 	info "Upgrade later with: ${helper} -Syu vop-bin"
+}
+
+update_aur() {
+	local helper
+	helper=$(detect_aur_helper)
+
+	if [ -z "$helper" ]; then
+		error "No AUR helper found (yay or paru required)."
+		exit 1
+	fi
+
+	info "Updating vop via AUR using ${helper}..."
+	"$helper" -S --needed vop-bin
+
+	ok "vop is up to date (AUR)."
 }
 
 install_binary() {
@@ -167,7 +215,7 @@ install_binary() {
 		exit 1
 	}
 
-	# Parse version -- try jq first, fall back to grep+sed.
+	# Parse version -- try jq first, fall back to grep.
 	if has_cmd jq; then
 		version=$(echo "$api_response" | jq -r '.tag_name // empty')
 	else
@@ -177,18 +225,27 @@ install_binary() {
 	if [ -z "${version:-}" ]; then
 		error "Failed to determine latest version."
 		error "Check https://github.com/${REPO}/releases for available versions."
-		# Show rate limit hint if the response looks like an error
 		if echo "$api_response" | grep -qi "rate limit"; then
 			error "GitHub API rate limit exceeded. Try again later."
 		fi
 		exit 1
 	fi
 
+	# If already installed, check if we're already up to date.
+	if has_cmd vop; then
+		local current
+		current=$(vop version 2>/dev/null | awk '{print $1}') || true
+		if [ "${current:-}" = "$version" ]; then
+			ok "vop is already up to date (${version})."
+			return
+		fi
+		info "Updating ${current:-unknown} -> ${version}"
+	fi
+
 	info "Latest version: ${version}"
 	download_url="https://github.com/${REPO}/releases/download/${version}/${binary_name}"
 
 	# Download.
-	# Use global _TMP for trap cleanup.
 	_TMP=$(mktemp)
 	trap 'rm -f "$_TMP"' EXIT
 
@@ -232,13 +289,10 @@ install_binary() {
 
 # --- user prompt ---
 
-# Prompt the user to pick from a numbered list. Reads from /dev/tty
-# so it works even when stdin is piped (curl | bash).
 pick_method() {
 	local methods=("$@")
 	local count=${#methods[@]}
 
-	# If only one method, use it directly.
 	if [ "$count" -eq 1 ]; then
 		echo "${methods[0]}"
 		return
@@ -264,7 +318,6 @@ pick_method() {
 		printf 'Choose [1-%d] (default: 1): ' "$count" >/dev/tty
 		read -r choice </dev/tty || choice=""
 
-		# Default to first option.
 		if [ -z "$choice" ]; then
 			choice=1
 		fi
@@ -287,16 +340,18 @@ main() {
 	os=$(detect_os)
 	info "Detected OS: ${os}"
 
-	# Detect available methods.
+	# Detect available methods and any existing installation.
 	local methods_str method_array
 	methods_str=$(detect_methods)
 	read -ra method_array <<<"$methods_str"
 
-	# Allow forcing a method via env var.
+	local existing
+	existing=$(detect_existing)
+
+	# Allow forcing a method via env var (overrides existing detection).
 	local method="${VOP_METHOD:-}"
 
 	if [ -n "$method" ]; then
-		# Validate forced method.
 		local valid=false
 		for m in "${method_array[@]}"; do
 			if [ "$m" = "$method" ]; then
@@ -310,13 +365,25 @@ main() {
 			exit 1
 		fi
 		info "Using forced install method: ${method}"
+	elif [ -n "$existing" ]; then
+		# Already installed -- update via the original method.
+		local current_version
+		current_version=$(vop version 2>/dev/null | awk '{print $1}') || current_version="unknown"
+		info "vop ${current_version} is already installed (via ${existing})."
+
+		case "$existing" in
+		brew) update_brew ;;
+		aur) update_aur ;;
+		binary) install_binary ;; # install_binary handles the up-to-date check
+		esac
+
+		info "Run 'vop check' to verify your setup."
+		return
 	elif [ "${#method_array[@]}" -gt 1 ]; then
-		# Multiple methods available -- let the user choose.
 		if [ -t 0 ] || [ -e /dev/tty ]; then
 			method=$(pick_method "${method_array[@]}")
 			echo "" >/dev/tty 2>/dev/null || true
 		else
-			# Non-interactive (no tty) -- use the first (recommended) method.
 			method="${method_array[0]}"
 			info "Non-interactive mode: using ${method}"
 		fi
