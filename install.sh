@@ -6,6 +6,7 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash -s -- uninstall
 #
 # Environment variables:
 #   VOP_INSTALL_DIR   Override binary install directory (default: /usr/local/bin)
@@ -287,6 +288,210 @@ install_binary() {
 	info "Upgrade later with: vop update"
 }
 
+# --- uninstall ---
+
+# Find all vop binaries on the system, returning "path:method" lines.
+find_all_installations() {
+	local found=()
+
+	# Check Homebrew.
+	if has_cmd brew && brew list vop &>/dev/null 2>&1; then
+		local brew_bin
+		brew_bin=$(brew --prefix)/bin/vop
+		if [ -f "$brew_bin" ]; then
+			found+=("${brew_bin}:brew")
+		fi
+	fi
+
+	# Check AUR / pacman.
+	if has_cmd pacman; then
+		local pac_bin
+		pac_bin=$(pacman -Ql vop-bin 2>/dev/null | awk '/\/usr\/bin\/vop$/{print $2}') || true
+		if [ -n "$pac_bin" ] && [ -f "$pac_bin" ]; then
+			found+=("${pac_bin}:aur")
+		fi
+	fi
+
+	# Check common binary install locations.
+	local dir
+	for dir in /usr/local/bin /usr/bin "$HOME/.local/bin" "$HOME/bin" "${INSTALL_DIR}"; do
+		local bin="${dir}/vop"
+		[ -f "$bin" ] || continue
+
+		# Skip if already accounted for by brew or pacman above.
+		local dominated=false
+		local f
+		for f in "${found[@]:-}"; do
+			if [ "${f%%:*}" = "$bin" ]; then
+				dominated=true
+				break
+			fi
+		done
+		$dominated && continue
+
+		found+=("${bin}:binary")
+	done
+
+	local f
+	for f in "${found[@]:-}"; do
+		[ -n "$f" ] && echo "$f"
+	done
+}
+
+remove_binary() {
+	local bin="$1"
+	if [ ! -f "$bin" ]; then
+		return
+	fi
+	if [ -w "$bin" ] || [ -w "$(dirname "$bin")" ]; then
+		rm -f "$bin"
+	else
+		info "Removing ${bin} (requires sudo)..."
+		sudo rm -f "$bin"
+	fi
+}
+
+cmd_uninstall() {
+	local installs
+	installs=$(find_all_installations)
+
+	if [ -z "$installs" ]; then
+		info "vop is not installed."
+		return
+	fi
+
+	echo ""
+	info "Found the following vop installation(s):"
+	echo ""
+
+	local count=0
+	while IFS= read -r line; do
+		local path="${line%%:*}"
+		local method="${line##*:}"
+		count=$((count + 1))
+		local ver
+		ver=$("$path" version 2>/dev/null | awk '{print $1}') || ver="unknown"
+		case "$method" in
+		brew) printf '  %d) %s (%s, Homebrew)\n' "$count" "$path" "$ver" ;;
+		aur) printf '  %d) %s (%s, AUR/pacman)\n' "$count" "$path" "$ver" ;;
+		binary) printf '  %d) %s (%s, standalone binary)\n' "$count" "$path" "$ver" ;;
+		esac
+	done <<<"$installs"
+	echo ""
+
+	# If there's a mix, help the user understand the situation.
+	local has_pkg=false has_binary=false
+	while IFS= read -r line; do
+		local method="${line##*:}"
+		case "$method" in
+		brew | aur) has_pkg=true ;;
+		binary) has_binary=true ;;
+		esac
+	done <<<"$installs"
+
+	if $has_pkg && $has_binary; then
+		warn "You have both a package-managed and a standalone binary install."
+		warn "The standalone binary may shadow the package-managed one."
+		echo ""
+	fi
+
+	# Interactive: ask what to remove.
+	if [ -t 0 ] || [ -e /dev/tty ]; then
+		printf '\033[1mWhat would you like to remove?\033[0m\n' >/dev/tty
+		echo "" >/dev/tty
+		printf '  a) All installations\n' >/dev/tty
+		printf '  b) Only standalone binaries (keep package-managed)\n' >/dev/tty
+		printf '  c) Cancel\n' >/dev/tty
+		echo "" >/dev/tty
+
+		local choice
+		while true; do
+			printf 'Choose [a/b/c] (default: b): ' >/dev/tty
+			read -r choice </dev/tty || choice=""
+			[ -z "$choice" ] && choice="b"
+
+			case "$choice" in
+			a | A) break ;;
+			b | B) break ;;
+			c | C)
+				info "Cancelled."
+				return
+				;;
+			*)
+				warn "Invalid choice." >/dev/tty
+				;;
+			esac
+		done
+
+		echo ""
+		while IFS= read -r line; do
+			local path="${line%%:*}"
+			local method="${line##*:}"
+
+			case "$choice" in
+			b | B)
+				# Only remove standalone binaries.
+				if [ "$method" = "binary" ]; then
+					info "Removing ${path}..."
+					remove_binary "$path"
+					ok "Removed ${path}"
+				else
+					info "Keeping ${path} (managed by ${method})"
+				fi
+				;;
+			a | A)
+				case "$method" in
+				brew)
+					info "Uninstalling via Homebrew..."
+					brew uninstall vop 2>/dev/null || true
+					brew untap NodeSpy/vop 2>/dev/null || true
+					ok "Uninstalled vop from Homebrew."
+					;;
+				aur)
+					local helper
+					helper=$(detect_aur_helper)
+					if [ -n "$helper" ]; then
+						info "Uninstalling via ${helper}..."
+						"$helper" -R vop-bin
+					else
+						info "Uninstalling via pacman..."
+						sudo pacman -R vop-bin
+					fi
+					ok "Uninstalled vop-bin from AUR."
+					;;
+				binary)
+					info "Removing ${path}..."
+					remove_binary "$path"
+					ok "Removed ${path}"
+					;;
+				esac
+				;;
+			esac
+		done <<<"$installs"
+	else
+		# Non-interactive: only remove standalone binaries (safe default).
+		info "Non-interactive mode: removing standalone binaries only."
+		while IFS= read -r line; do
+			local path="${line%%:*}"
+			local method="${line##*:}"
+			if [ "$method" = "binary" ]; then
+				info "Removing ${path}..."
+				remove_binary "$path"
+				ok "Removed ${path}"
+			else
+				info "Keeping ${path} (managed by ${method})"
+			fi
+		done <<<"$installs"
+	fi
+
+	echo ""
+	if has_cmd vop; then
+		ok "vop is still available at $(command -v vop)"
+	else
+		ok "vop has been uninstalled."
+	fi
+}
+
 # --- user prompt ---
 
 pick_method() {
@@ -334,6 +539,14 @@ pick_method() {
 # --- main ---
 
 main() {
+	# Handle subcommands.
+	case "${1:-}" in
+	uninstall)
+		cmd_uninstall
+		return
+		;;
+	esac
+
 	need_cmd uname
 
 	local os
