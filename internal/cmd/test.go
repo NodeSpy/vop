@@ -11,10 +11,11 @@ import (
 
 func newTestCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "test <profile>",
-		Short: "Test 1Password + AWS connectivity",
-		Args:  cobra.ExactArgs(1),
-		RunE:  cmdTest,
+		Use:               "test <profile>",
+		Short:             "Test 1Password + AWS connectivity",
+		Args:              cobra.ExactArgs(1),
+		RunE:              cmdTest,
+		ValidArgsFunction: completeProfiles,
 	}
 }
 

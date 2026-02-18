@@ -140,6 +140,57 @@ func (c *Config) ProfileNames() []string {
 	return names
 }
 
+// ClosestProfile returns the profile name most similar to the given input,
+// along with the edit distance. Returns ("", -1) if there are no profiles.
+func (c *Config) ClosestProfile(input string) (string, int) {
+	names := c.ProfileNames()
+	if len(names) == 0 {
+		return "", -1
+	}
+
+	best := names[0]
+	bestDist := levenshtein(input, best)
+	for _, n := range names[1:] {
+		d := levenshtein(input, n)
+		if d < bestDist {
+			best = n
+			bestDist = d
+		}
+	}
+	return best, bestDist
+}
+
+// levenshtein computes the edit distance between two strings.
+func levenshtein(a, b string) int {
+	la, lb := len(a), len(b)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+
+	// Use single-row DP to save memory.
+	prev := make([]int, lb+1)
+	for j := range prev {
+		prev[j] = j
+	}
+
+	for i := 1; i <= la; i++ {
+		curr := make([]int, lb+1)
+		curr[0] = i
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min(curr[j-1]+1, min(prev[j]+1, prev[j-1]+cost))
+		}
+		prev = curr
+	}
+	return prev[lb]
+}
+
 // SetProfile adds or updates a profile.
 func (c *Config) SetProfile(name string, p *Profile) {
 	c.Profiles[name] = p

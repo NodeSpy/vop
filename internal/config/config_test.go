@@ -359,6 +359,63 @@ func TestFieldName_FieldMapNoPrefix(t *testing.T) {
 	}
 }
 
+func TestClosestProfile(t *testing.T) {
+	cfg := &Config{
+		Profiles: map[string]*Profile{
+			"ednition":    {},
+			"tap":         {},
+			"teachermade": {},
+		},
+	}
+
+	tests := []struct {
+		input    string
+		wantName string
+	}{
+		{"edniton", "ednition"},       // transposition
+		{"edntion", "ednition"},       // missing letter
+		{"ednition", "ednition"},      // exact match still works
+		{"tapp", "tap"},               // extra letter
+		{"teachermad", "teachermade"}, // missing last letter
+	}
+
+	for _, tt := range tests {
+		name, dist := cfg.ClosestProfile(tt.input)
+		if name != tt.wantName {
+			t.Errorf("ClosestProfile(%q) = %q (dist %d), want %q", tt.input, name, dist, tt.wantName)
+		}
+	}
+}
+
+func TestClosestProfile_Empty(t *testing.T) {
+	cfg := &Config{Profiles: map[string]*Profile{}}
+	name, dist := cfg.ClosestProfile("anything")
+	if name != "" || dist != -1 {
+		t.Errorf("expected (\"\", -1) for empty profiles, got (%q, %d)", name, dist)
+	}
+}
+
+func TestLevenshtein(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"", "", 0},
+		{"abc", "", 3},
+		{"", "abc", 3},
+		{"abc", "abc", 0},
+		{"kitten", "sitting", 3},
+		{"edniton", "ednition", 1},
+		{"tap", "tapp", 1},
+	}
+	for _, tt := range tests {
+		got := levenshtein(tt.a, tt.b)
+		if got != tt.want {
+			t.Errorf("levenshtein(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
 func TestFieldMapSerialization(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profiles.json")

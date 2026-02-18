@@ -12,8 +12,9 @@ import (
 
 func newRefreshCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "refresh [profile]",
-		Short: "Refresh credentials in an active vop shell",
+		Use:               "refresh [profile]",
+		Short:             "Refresh credentials in an active vop shell",
+		ValidArgsFunction: completeProfiles,
 		Long: `Refresh AWS credentials for the active vop session.
 
 If no profile is specified, the current VOP_PROFILE is used.

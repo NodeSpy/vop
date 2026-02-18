@@ -20,8 +20,9 @@ where to find AWS credentials.
 
 If not inside a vop shell, shows what the paths would be for a
 given profile.`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: cmdAgent,
+		Args:              cobra.MaximumNArgs(1),
+		RunE:              cmdAgent,
+		ValidArgsFunction: completeProfiles,
 	}
 }
 

@@ -11,9 +11,10 @@ import (
 
 func newShowCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "show <profile>",
-		Short: "Show profile details",
-		Args:  cobra.ExactArgs(1),
+		Use:               "show <profile>",
+		Short:             "Show profile details",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeProfiles,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := loadConfig()
 			if err != nil {

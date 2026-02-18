@@ -7,11 +7,12 @@ import (
 
 func newRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "rm <profile>",
-		Aliases: []string{"remove"},
-		Short:   "Remove a profile",
-		Args:    cobra.ExactArgs(1),
-		RunE:    cmdRm,
+		Use:               "rm <profile>",
+		Aliases:           []string{"remove"},
+		Short:             "Remove a profile",
+		Args:              cobra.ExactArgs(1),
+		RunE:              cmdRm,
+		ValidArgsFunction: completeProfiles,
 	}
 }
 

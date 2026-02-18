@@ -11,10 +11,11 @@ import (
 
 func newDumpCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "dump [profile] [format]",
-		Short: "Dump active session credentials (json|env|creds)",
-		Args:  cobra.RangeArgs(0, 2),
-		RunE:  cmdDump,
+		Use:               "dump [profile] [format]",
+		Short:             "Dump active session credentials (json|env|creds)",
+		Args:              cobra.RangeArgs(0, 2),
+		RunE:              cmdDump,
+		ValidArgsFunction: completeProfiles,
 	}
 }
 

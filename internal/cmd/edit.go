@@ -10,10 +10,11 @@ import (
 
 func newEditCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "edit <profile>",
-		Short: "Edit an existing profile",
-		Args:  cobra.ExactArgs(1),
-		RunE:  cmdEdit,
+		Use:               "edit <profile>",
+		Short:             "Edit an existing profile",
+		Args:              cobra.ExactArgs(1),
+		RunE:              cmdEdit,
+		ValidArgsFunction: completeProfiles,
 	}
 }
 

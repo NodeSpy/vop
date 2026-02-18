@@ -13,10 +13,11 @@ import (
 
 func newRotateCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "rotate [profile]",
-		Short: "Rotate AWS access keys",
-		Args:  cobra.MaximumNArgs(1),
-		RunE:  cmdRotate,
+		Use:               "rotate [profile]",
+		Short:             "Rotate AWS access keys",
+		Args:              cobra.MaximumNArgs(1),
+		RunE:              cmdRotate,
+		ValidArgsFunction: completeProfiles,
 	}
 }
 

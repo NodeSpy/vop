@@ -29,8 +29,9 @@ Note: This requires 1Password authentication each time credentials
 expire. With the op CLI desktop app integration, this is seamless
 (biometric). With standalone op CLI, you may be prompted for your
 master password.`,
-		Args: cobra.ExactArgs(1),
-		RunE: cmdCredProcess,
+		Args:              cobra.ExactArgs(1),
+		RunE:              cmdCredProcess,
+		ValidArgsFunction: completeProfiles,
 	}
 }
 

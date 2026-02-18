@@ -17,10 +17,11 @@ import (
 
 func newShellCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "shell [profile]",
-		Short: "Spawn sub-shell with credentials",
-		Args:  cobra.MaximumNArgs(1),
-		RunE:  cmdShell,
+		Use:               "shell [profile]",
+		Short:             "Spawn sub-shell with credentials",
+		Args:              cobra.MaximumNArgs(1),
+		RunE:              cmdShell,
+		ValidArgsFunction: completeProfiles,
 	}
 	cmd.Flags().Bool("no-refresh", false, "Disable automatic credential refresh")
 	cmd.Flags().BoolP("quiet", "q", false, "Suppress all informational output")
@@ -61,7 +62,7 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	profile, err := requireProfile(c, profileName)
+	profileName, profile, err := resolveProfile(c, profileName)
 	if err != nil {
 		return err
 	}

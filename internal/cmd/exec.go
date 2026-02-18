@@ -19,6 +19,7 @@ func newExecCmd() *cobra.Command {
 		Args:               cobra.MinimumNArgs(2),
 		DisableFlagParsing: true,
 		RunE:               cmdExec,
+		ValidArgsFunction:  completeProfiles,
 	}
 }
 
@@ -54,7 +55,7 @@ func cmdExec(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("no command specified")
 	}
 
-	profile, err := requireProfile(c, profileName)
+	profileName, profile, err := resolveProfile(c, profileName)
 	if err != nil {
 		return err
 	}
