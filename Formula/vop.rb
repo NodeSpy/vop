@@ -4,26 +4,26 @@
 class Vop < Formula
   desc "AWS credential management via 1Password"
   homepage "https://github.com/NodeSpy/vop"
-  version "v0.2.7"
+  version "v0.3.0"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/NodeSpy/vop/releases/download/v0.2.7/vop-darwin-arm64"
-      sha256 "130eae64d00170fded0bbcdc63eb29026fcec6daf918e05ccc432f1d17a4931f"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.3.0/vop-darwin-arm64"
+      sha256 "623eb1a4739c813dc23ba06d46c2e981f443ff5160762cf27a03d7c5f571aa95"
     else
-      url "https://github.com/NodeSpy/vop/releases/download/v0.2.7/vop-darwin-amd64"
-      sha256 "6f302b3f881a55087159cad750f9837abdcd7e25f1d6382b913b8360f2eaefcf"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.3.0/vop-darwin-amd64"
+      sha256 "99014b114913f3f91458c35932d119d660d91328a34a27386ca40dec36afbab7"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/NodeSpy/vop/releases/download/v0.2.7/vop-linux-arm64"
-      sha256 "8d35996cb7947fea02d8504a7ee8f7dbddd87e680fb80871f3ba76b8fa0a4633"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.3.0/vop-linux-arm64"
+      sha256 "d914e3599ce76148948c1cc97aea5c3bc50235d8777e6b3f0ea24c2e503b144f"
     else
-      url "https://github.com/NodeSpy/vop/releases/download/v0.2.7/vop-linux-amd64"
-      sha256 "73d6eeb4099005d3d43cde76ad84995d685394006210e28c2201d013d5b16ddf"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.3.0/vop-linux-amd64"
+      sha256 "0f07b7daa3c78bca605099996a93ebcaddf28b92f6d4ee76570ad86ab305765b"
     end
   end
 
