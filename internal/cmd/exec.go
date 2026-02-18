@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -29,6 +30,14 @@ func cmdExec(_ *cobra.Command, args []string) error {
 
 	profileName := args[0]
 	cmdArgs := args[1:]
+
+	// Strip leading "--" separator if present (e.g. vop exec profile -- cmd).
+	if len(cmdArgs) > 0 && cmdArgs[0] == "--" {
+		cmdArgs = cmdArgs[1:]
+	}
+	if len(cmdArgs) == 0 {
+		return fmt.Errorf("no command specified")
+	}
 
 	profile, err := requireProfile(c, profileName)
 	if err != nil {

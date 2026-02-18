@@ -121,6 +121,8 @@ vop prod
 vop shell prod
 
 # Run a single command
+vop exec prod aws s3 ls
+# or with -- separator:
 vop exec prod -- aws s3 ls
 
 # Test credentials
@@ -196,7 +198,7 @@ The token is stored in `~/.config/vop/profiles.json` which is chmod 600 and shou
 | `vop ls` | List configured profiles |
 | `vop shell [profile]` | Open a shell with AWS credentials (picker if no arg) |
 | `vop <profile>` | Shorthand for `vop shell <profile>` |
-| `vop exec <profile> -- <cmd>` | Run a command with credentials |
+| `vop exec <profile> [--] <cmd>` | Run a command with credentials |
 | `vop refresh [profile]` | Refresh credentials in an active shell |
 | `vop cred-process <profile>` | Output credentials for AWS `credential_process` |
 | `vop agent [profile]` | Show credential paths for AI agents / external tools |
@@ -206,7 +208,8 @@ The token is stored in `~/.config/vop/profiles.json` which is chmod 600 and shou
 | `vop show <profile>` | Show profile configuration |
 | `vop dump [profile]` | Dump raw credentials |
 | `vop test <profile>` | Test credentials with STS |
-| `vop rotate <profile>` | Rotate IAM access keys |
+| `vop cat` | Print profiles config (redacts tokens) |
+| `vop rotate [profile]` | Rotate IAM access keys (picker if no arg) |
 | `vop migrate [vault]` | Migrate from Vaulted |
 | `vop check` | Check prerequisites and configuration |
 | `vop version` | Print version information |
