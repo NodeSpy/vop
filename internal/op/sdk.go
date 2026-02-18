@@ -43,53 +43,46 @@ func (s *SDKClient) EnsureSignedIn(_ string) error {
 }
 
 func (s *SDKClient) ReadField(_, item, field string) (string, error) {
-	ref := fmt.Sprintf("op://%s/%s/%s", s.vault, item, field)
-	val, err := s.inner.Secrets().Resolve(context.Background(), ref)
+	fullItem, err := s.getItem(item)
 	if err != nil {
 		return "", fmt.Errorf("failed to read field %q from item %q: %w", field, item, err)
 	}
-	val = strings.TrimSpace(val)
-	if val == "" {
-		return "", fmt.Errorf("empty value for field %q in item %q", field, item)
+	for _, f := range fullItem.Fields {
+		if strings.EqualFold(f.Title, field) {
+			val := strings.TrimSpace(f.Value)
+			if val == "" {
+				return "", fmt.Errorf("empty value for field %q in item %q", field, item)
+			}
+			return val, nil
+		}
 	}
-	return val, nil
+	return "", fmt.Errorf("field %q not found in item %q", field, item)
 }
 
 func (s *SDKClient) GetTOTP(_, item string) (string, error) {
-	ref := fmt.Sprintf("op://%s/%s/one-time password?attribute=otp", s.vault, item)
-	code, err := s.inner.Secrets().Resolve(context.Background(), ref)
+	fullItem, err := s.getItem(item)
 	if err != nil {
 		return "", fmt.Errorf("failed to get TOTP from item %q: %w", item, err)
 	}
-	return strings.TrimSpace(code), nil
+	for _, f := range fullItem.Fields {
+		if f.Details != nil {
+			if otp := f.Details.OTP(); otp != nil {
+				if otp.ErrorMessage != nil && *otp.ErrorMessage != "" {
+					return "", fmt.Errorf("TOTP error for item %q: %s", item, *otp.ErrorMessage)
+				}
+				if otp.Code != nil && *otp.Code != "" {
+					return strings.TrimSpace(*otp.Code), nil
+				}
+			}
+		}
+	}
+	return "", fmt.Errorf("no TOTP field found in item %q", item)
 }
 
 func (s *SDKClient) EditItem(_, item string, assignments ...string) error {
-	// Find the item first
-	vaultID, err := s.resolveVaultID()
+	fullItem, err := s.getItem(item)
 	if err != nil {
 		return err
-	}
-
-	items, err := s.inner.Items().List(context.Background(), vaultID)
-	if err != nil {
-		return fmt.Errorf("failed to list items: %w", err)
-	}
-
-	var itemID string
-	for _, it := range items {
-		if it.Title == item {
-			itemID = it.ID
-			break
-		}
-	}
-	if itemID == "" {
-		return fmt.Errorf("item %q not found in vault %q", item, s.vault)
-	}
-
-	fullItem, err := s.inner.Items().Get(context.Background(), vaultID, itemID)
-	if err != nil {
-		return fmt.Errorf("failed to get item %q: %w", item, err)
 	}
 
 	// Apply assignments (format: "field label=value" or "field label[type]=value")
@@ -164,30 +157,9 @@ func (s *SDKClient) ListItems(_, vault string) ([]OPItem, error) {
 }
 
 func (s *SDKClient) ListFields(_, item string) ([]OPField, error) {
-	vaultID, err := s.resolveVaultID()
+	fullItem, err := s.getItem(item)
 	if err != nil {
 		return nil, err
-	}
-
-	items, err := s.inner.Items().List(context.Background(), vaultID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list items: %w", err)
-	}
-
-	var itemID string
-	for _, it := range items {
-		if it.Title == item {
-			itemID = it.ID
-			break
-		}
-	}
-	if itemID == "" {
-		return nil, fmt.Errorf("item %q not found in vault %q", item, s.vault)
-	}
-
-	fullItem, err := s.inner.Items().Get(context.Background(), vaultID, itemID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get item %q: %w", item, err)
 	}
 
 	var fields []OPField
@@ -255,6 +227,37 @@ func (s *SDKClient) CreateItem(_, vault, category, title, tags string, assignmen
 
 	_, err = s.inner.Items().Create(context.Background(), params)
 	return err
+}
+
+// getItem looks up a 1Password item by title in the default vault and
+// returns the full item with all fields populated.
+func (s *SDKClient) getItem(title string) (onepassword.Item, error) {
+	vaultID, err := s.resolveVaultID()
+	if err != nil {
+		return onepassword.Item{}, err
+	}
+
+	items, err := s.inner.Items().List(context.Background(), vaultID)
+	if err != nil {
+		return onepassword.Item{}, fmt.Errorf("failed to list items: %w", err)
+	}
+
+	var itemID string
+	for _, it := range items {
+		if it.Title == title {
+			itemID = it.ID
+			break
+		}
+	}
+	if itemID == "" {
+		return onepassword.Item{}, fmt.Errorf("item %q not found in vault %q", title, s.vault)
+	}
+
+	fullItem, err := s.inner.Items().Get(context.Background(), vaultID, itemID)
+	if err != nil {
+		return onepassword.Item{}, fmt.Errorf("failed to get item %q: %w", title, err)
+	}
+	return fullItem, nil
 }
 
 // resolveVaultID returns the vault ID for the client's default vault.
