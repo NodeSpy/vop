@@ -179,8 +179,8 @@ func TestHandleCredsPush(t *testing.T) {
 		config:    cfg,
 	}
 
-	// Push credentials via POST.
-	body := `{"AccessKeyId":"AKID123","SecretAccessKey":"secret","SessionToken":"tok","Expiration":"2026-02-18T20:00:00Z"}`
+	// Push credentials via POST. Use a far-future expiration so the test never expires.
+	body := `{"AccessKeyId":"AKID123","SecretAccessKey":"secret","SessionToken":"tok","Expiration":"2099-01-01T00:00:00Z"}`
 	req := httptest.NewRequest("POST", "/creds/prod", strings.NewReader(body))
 	req.Header.Set("Authorization", "test-token")
 	req.Header.Set("Content-Type", "application/json")
@@ -216,8 +216,8 @@ func TestHandleCredsPush(t *testing.T) {
 	if resp.Token != "tok" {
 		t.Errorf("expected Token 'tok', got %q", resp.Token)
 	}
-	if resp.Expiration != "2026-02-18T20:00:00Z" {
-		t.Errorf("expected Expiration '2026-02-18T20:00:00Z', got %q", resp.Expiration)
+	if resp.Expiration != "2099-01-01T00:00:00Z" {
+		t.Errorf("expected Expiration '2099-01-01T00:00:00Z', got %q", resp.Expiration)
 	}
 }
 
