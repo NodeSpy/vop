@@ -54,9 +54,24 @@ func staticConfig(accessKey, secretKey string) aws.Config {
 	}
 }
 
+// sessionConfig returns an aws.Config using temporary session credentials.
+func sessionConfig(accessKey, secretKey, sessionToken string) aws.Config {
+	return aws.Config{
+		Region:      "us-east-1",
+		Credentials: credentials.NewStaticCredentialsProvider(accessKey, secretKey, sessionToken),
+	}
+}
+
 // GetCallerIdentity calls sts:GetCallerIdentity to verify credentials.
 func GetCallerIdentity(ctx context.Context, accessKey, secretKey string) (*CallerIdentity, error) {
 	cfg := staticConfig(accessKey, secretKey)
+	client := sts.NewFromConfig(cfg)
+	return getCallerIdentity(ctx, client)
+}
+
+// GetCallerIdentityWithSession is like GetCallerIdentity but uses temporary session credentials.
+func GetCallerIdentityWithSession(ctx context.Context, accessKey, secretKey, sessionToken string) (*CallerIdentity, error) {
+	cfg := sessionConfig(accessKey, secretKey, sessionToken)
 	client := sts.NewFromConfig(cfg)
 	return getCallerIdentity(ctx, client)
 }
@@ -132,6 +147,13 @@ func CreateAccessKey(ctx context.Context, accessKey, secretKey, username string)
 	return createAccessKey(ctx, client, username)
 }
 
+// CreateAccessKeyWithSession is like CreateAccessKey but uses temporary session credentials.
+func CreateAccessKeyWithSession(ctx context.Context, accessKey, secretKey, sessionToken, username string) (*AccessKey, error) {
+	cfg := sessionConfig(accessKey, secretKey, sessionToken)
+	client := iam.NewFromConfig(cfg)
+	return createAccessKey(ctx, client, username)
+}
+
 func createAccessKey(ctx context.Context, client iamAPI, username string) (*AccessKey, error) {
 	input := &iam.CreateAccessKeyInput{}
 	if username != "" {
@@ -153,6 +175,13 @@ func createAccessKey(ctx context.Context, client iamAPI, username string) (*Acce
 // If username is empty, it deletes a key for the caller.
 func DeleteAccessKey(ctx context.Context, accessKey, secretKey, targetKeyID, username string) error {
 	cfg := staticConfig(accessKey, secretKey)
+	client := iam.NewFromConfig(cfg)
+	return deleteAccessKey(ctx, client, targetKeyID, username)
+}
+
+// DeleteAccessKeyWithSession is like DeleteAccessKey but uses temporary session credentials.
+func DeleteAccessKeyWithSession(ctx context.Context, accessKey, secretKey, sessionToken, targetKeyID, username string) error {
+	cfg := sessionConfig(accessKey, secretKey, sessionToken)
 	client := iam.NewFromConfig(cfg)
 	return deleteAccessKey(ctx, client, targetKeyID, username)
 }

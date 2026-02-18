@@ -56,6 +56,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newRefreshCmd())
 	root.AddCommand(newCredProcessCmd())
 	root.AddCommand(newAgentCmd())
+	root.AddCommand(newCatCmd())
 
 	return root
 }
