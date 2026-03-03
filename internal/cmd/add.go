@@ -225,6 +225,49 @@ func cmdAdd(_ *cobra.Command, args []string) error {
 		}
 	}
 
+	// --- Role assumption setup ---
+	roleARN := ""
+	sourceProfile := ""
+	roleSessionName := ""
+	externalID := ""
+
+	fmt.Println()
+	if ui.PromptYN("Assume a role? (for cross-account or delegated access)", false) {
+		roleARN = ui.Prompt("Role ARN (e.g. arn:aws:iam::123456789012:role/MyRole)", "")
+		if roleARN == "" {
+			return fmt.Errorf("role ARN cannot be empty when role assumption is enabled")
+		}
+
+		existingNames := c.ProfileNames()
+		// Remove the current profile name in case it was added in a prior partial run.
+		filtered := existingNames[:0]
+		for _, n := range existingNames {
+			if n != name {
+				filtered = append(filtered, n)
+			}
+		}
+
+		if len(filtered) > 0 {
+			fmt.Println()
+			selected, selErr := ui.Select("Source profile (holds the base credentials for AssumeRole)", filtered)
+			if selErr != nil {
+				return selErr
+			}
+			sourceProfile = selected
+		} else {
+			sourceProfile = ui.Prompt("Source profile name (must already exist in vop)", "")
+		}
+		if sourceProfile == "" {
+			return fmt.Errorf("source profile cannot be empty")
+		}
+		if sourceProfile == name {
+			return fmt.Errorf("source_profile cannot be the same as the profile being created")
+		}
+
+		roleSessionName = ui.Prompt("Session name (blank = 'vop')", "")
+		externalID = ui.Prompt("External ID (blank = none)", "")
+	}
+
 	// Agent policy
 	agentPolicy := promptAgentPolicy("")
 
@@ -239,6 +282,10 @@ func cmdAdd(_ *cobra.Command, args []string) error {
 		IAMUsername:         iamUsername,
 		ServiceAccountToken: serviceAccountToken,
 		AgentPolicy:         agentPolicy,
+		RoleARN:             roleARN,
+		SourceProfile:       sourceProfile,
+		RoleSessionName:     roleSessionName,
+		ExternalID:          externalID,
 	}
 
 	c.SetProfile(name, profile)

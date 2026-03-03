@@ -303,9 +303,11 @@ func (s *Server) getCreds(profileName string, profile *config.Profile) (*creds.A
 		return nil, fmt.Errorf("no credentials loaded for '%s': run 'vop auth %s' to authenticate", profileName, profileName)
 	}
 
-	// Fetch fresh credentials.
+	// Fetch fresh credentials. Provide a clientFor resolver for assumed-role
+	// profiles; the server uses its single op client for all source profiles.
+	clientFor := func(p *config.Profile) (op.Client, error) { return s.opClient, nil }
 	ui.Quiet = true
-	awsCreds, err := creds.Fetch(profile, profileName, s.opClient)
+	awsCreds, err := creds.Fetch(profile, profileName, s.opClient, s.config, clientFor)
 	ui.Quiet = false
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch credentials for '%s': %w", profileName, err)

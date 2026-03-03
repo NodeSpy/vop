@@ -19,6 +19,7 @@ import (
 type mockSTS struct {
 	GetCallerIdentityFunc func(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
 	GetSessionTokenFunc   func(ctx context.Context, params *sts.GetSessionTokenInput, optFns ...func(*sts.Options)) (*sts.GetSessionTokenOutput, error)
+	AssumeRoleFunc        func(ctx context.Context, params *sts.AssumeRoleInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleOutput, error)
 }
 
 func (m *mockSTS) GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error) {
@@ -31,6 +32,13 @@ func (m *mockSTS) GetCallerIdentity(ctx context.Context, params *sts.GetCallerId
 func (m *mockSTS) GetSessionToken(ctx context.Context, params *sts.GetSessionTokenInput, optFns ...func(*sts.Options)) (*sts.GetSessionTokenOutput, error) {
 	if m.GetSessionTokenFunc != nil {
 		return m.GetSessionTokenFunc(ctx, params, optFns...)
+	}
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockSTS) AssumeRole(ctx context.Context, params *sts.AssumeRoleInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleOutput, error) {
+	if m.AssumeRoleFunc != nil {
+		return m.AssumeRoleFunc(ctx, params, optFns...)
 	}
 	return nil, fmt.Errorf("not implemented")
 }
@@ -414,5 +422,119 @@ func TestListMFADevices_MultipleDevices(t *testing.T) {
 	}
 	if serial != "arn:aws:iam::123456789012:mfa/first" {
 		t.Errorf("expected first device serial, got %q", serial)
+	}
+}
+
+func TestAssumeRole_Success(t *testing.T) {
+	expiry := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	mock := &mockSTS{
+		AssumeRoleFunc: func(ctx context.Context, params *sts.AssumeRoleInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleOutput, error) {
+			if aws.ToString(params.RoleArn) != "arn:aws:iam::999999999999:role/MyRole" {
+				t.Errorf("unexpected RoleArn: %s", aws.ToString(params.RoleArn))
+			}
+			if aws.ToString(params.RoleSessionName) != "mysession" {
+				t.Errorf("unexpected RoleSessionName: %s", aws.ToString(params.RoleSessionName))
+			}
+			if params.ExternalId != nil {
+				t.Errorf("expected nil ExternalId, got %s", aws.ToString(params.ExternalId))
+			}
+			return &sts.AssumeRoleOutput{
+				Credentials: &ststypes.Credentials{
+					AccessKeyId:     aws.String("ASIAROLEKEY"),
+					SecretAccessKey: aws.String("rolesecret"),
+					SessionToken:    aws.String("roletoken"),
+					Expiration:      &expiry,
+				},
+			}, nil
+		},
+	}
+
+	creds, err := assumeRole(context.Background(), mock,
+		"arn:aws:iam::999999999999:role/MyRole", "mysession", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if creds.AccessKeyID != "ASIAROLEKEY" {
+		t.Errorf("expected 'ASIAROLEKEY', got %q", creds.AccessKeyID)
+	}
+	if creds.SecretAccessKey != "rolesecret" {
+		t.Errorf("expected 'rolesecret', got %q", creds.SecretAccessKey)
+	}
+	if creds.SessionToken != "roletoken" {
+		t.Errorf("expected 'roletoken', got %q", creds.SessionToken)
+	}
+	if creds.Expiration != "2026-03-01T00:00:00Z" {
+		t.Errorf("expected '2026-03-01T00:00:00Z', got %q", creds.Expiration)
+	}
+}
+
+func TestAssumeRole_WithExternalID(t *testing.T) {
+	expiry := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	mock := &mockSTS{
+		AssumeRoleFunc: func(ctx context.Context, params *sts.AssumeRoleInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleOutput, error) {
+			if aws.ToString(params.ExternalId) != "myextid" {
+				t.Errorf("expected ExternalId 'myextid', got %q", aws.ToString(params.ExternalId))
+			}
+			return &sts.AssumeRoleOutput{
+				Credentials: &ststypes.Credentials{
+					AccessKeyId:     aws.String("ASIAEXTKEY"),
+					SecretAccessKey: aws.String("extsecret"),
+					SessionToken:    aws.String("exttoken"),
+					Expiration:      &expiry,
+				},
+			}, nil
+		},
+	}
+
+	creds, err := assumeRole(context.Background(), mock,
+		"arn:aws:iam::999999999999:role/MyRole", "vop", "myextid")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if creds.AccessKeyID != "ASIAEXTKEY" {
+		t.Errorf("expected 'ASIAEXTKEY', got %q", creds.AccessKeyID)
+	}
+}
+
+func TestAssumeRole_DefaultSessionName(t *testing.T) {
+	expiry := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	mock := &mockSTS{
+		AssumeRoleFunc: func(ctx context.Context, params *sts.AssumeRoleInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleOutput, error) {
+			if aws.ToString(params.RoleSessionName) != "vop" {
+				t.Errorf("expected default session name 'vop', got %q", aws.ToString(params.RoleSessionName))
+			}
+			return &sts.AssumeRoleOutput{
+				Credentials: &ststypes.Credentials{
+					AccessKeyId:     aws.String("ASIADEFAULT"),
+					SecretAccessKey: aws.String("defaultsecret"),
+					SessionToken:    aws.String("defaulttoken"),
+					Expiration:      &expiry,
+				},
+			}, nil
+		},
+	}
+
+	// Empty session name should default to "vop"
+	_, err := assumeRole(context.Background(), mock,
+		"arn:aws:iam::999999999999:role/MyRole", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAssumeRole_Error(t *testing.T) {
+	mock := &mockSTS{
+		AssumeRoleFunc: func(ctx context.Context, params *sts.AssumeRoleInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleOutput, error) {
+			return nil, fmt.Errorf("access denied")
+		},
+	}
+
+	_, err := assumeRole(context.Background(), mock,
+		"arn:aws:iam::999999999999:role/MyRole", "vop", "")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got := err.Error(); got != "sts:AssumeRole failed: access denied" {
+		t.Errorf("unexpected error message: %q", got)
 	}
 }

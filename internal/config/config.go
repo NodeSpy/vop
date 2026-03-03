@@ -40,6 +40,22 @@ type Profile struct {
 	// 'vop agent'. When empty, the default read-only instructions are used.
 	// Any non-empty string replaces the default instructions entirely.
 	AgentPolicy string `json:"agent_policy,omitempty"`
+
+	// RoleARN, if set, causes vop to call sts:AssumeRole after fetching the
+	// source profile's credentials. Requires SourceProfile to be set.
+	RoleARN string `json:"role_arn,omitempty"`
+
+	// SourceProfile is the name of another vop profile whose credentials are
+	// used to call sts:AssumeRole. Required when RoleARN is set.
+	SourceProfile string `json:"source_profile,omitempty"`
+
+	// RoleSessionName is passed to sts:AssumeRole as the session name.
+	// Defaults to "vop" when empty.
+	RoleSessionName string `json:"role_session_name,omitempty"`
+
+	// ExternalID is an optional ExternalId condition value required by some
+	// cross-account IAM trust policies.
+	ExternalID string `json:"external_id,omitempty"`
 }
 
 // FieldName returns the 1Password field label for a given base name.
@@ -61,6 +77,12 @@ func (p *Profile) FieldName(base string) string {
 // token, meaning the 1Password SDK should be used instead of the op CLI.
 func (p *Profile) UsesSDK() bool {
 	return p.ServiceAccountToken != ""
+}
+
+// IsAssumedRole returns true if this profile is configured to assume a role
+// via sts:AssumeRole using the credentials of another (source) profile.
+func (p *Profile) IsAssumedRole() bool {
+	return p.RoleARN != ""
 }
 
 // Config is the top-level configuration structure.

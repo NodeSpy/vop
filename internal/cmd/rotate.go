@@ -55,13 +55,17 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 		return err
 	}
 
+	if profile.IsAssumedRole() {
+		return fmt.Errorf("cannot rotate keys for assumed-role profile %q: key rotation must be performed on the source profile (%q)", profileName, profile.SourceProfile)
+	}
+
 	client, err := getClientForProfile(profile)
 	if err != nil {
 		return err
 	}
 
 	// Authenticate through the normal credential flow (handles MFA/STS).
-	sessionCreds, err := creds.Fetch(profile, profileName, client)
+	sessionCreds, err := creds.Fetch(profile, profileName, client, c, opClientFor())
 	if err != nil {
 		return err
 	}

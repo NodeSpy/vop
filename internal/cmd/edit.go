@@ -41,6 +41,10 @@ func cmdEdit(_ *cobra.Command, args []string) error {
 	mfaTOTPItem := ui.Prompt("MFA TOTP item (blank to remove, same item name for co-located)", profile.MFATOTPItem)
 	iamUsername := ui.Prompt("IAM username (blank to remove)", profile.IAMUsername)
 	serviceAccountToken := ui.Prompt("Service account token (blank to use op CLI)", profile.ServiceAccountToken)
+	roleARN := ui.Prompt("Role ARN for AssumeRole (blank to disable)", profile.RoleARN)
+	sourceProfile := ui.Prompt("Source profile for AssumeRole (blank to disable)", profile.SourceProfile)
+	roleSessionName := ui.Prompt("Role session name (blank = 'vop')", profile.RoleSessionName)
+	externalID := ui.Prompt("External ID (blank = none)", profile.ExternalID)
 
 	// Agent policy: show default instructions, offer to customize.
 	agentPolicy := promptAgentPolicy(profile.AgentPolicy)
@@ -84,6 +88,10 @@ func cmdEdit(_ *cobra.Command, args []string) error {
 		IAMUsername:         iamUsername,
 		ServiceAccountToken: serviceAccountToken,
 		AgentPolicy:         agentPolicy,
+		RoleARN:             roleARN,
+		SourceProfile:       sourceProfile,
+		RoleSessionName:     roleSessionName,
+		ExternalID:          externalID,
 	}
 
 	c.SetProfile(name, updated)

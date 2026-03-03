@@ -42,7 +42,7 @@ func cmdAuth(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	awsCreds, err := creds.Fetch(profile, profileName, client)
+	awsCreds, err := creds.Fetch(profile, profileName, client, c, opClientFor())
 	if err != nil {
 		return err
 	}

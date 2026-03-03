@@ -76,7 +76,7 @@ func cmdCredProcess(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	awsCreds, err := creds.Fetch(profile, profileName, opClient)
+	awsCreds, err := creds.Fetch(profile, profileName, opClient, c, opClientFor())
 	if err != nil {
 		return err
 	}

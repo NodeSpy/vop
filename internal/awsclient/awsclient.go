@@ -16,6 +16,7 @@ import (
 type stsAPI interface {
 	GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
 	GetSessionToken(ctx context.Context, params *sts.GetSessionTokenInput, optFns ...func(*sts.Options)) (*sts.GetSessionTokenOutput, error)
+	AssumeRole(ctx context.Context, params *sts.AssumeRoleInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleOutput, error)
 }
 
 // iamAPI defines the IAM operations we use (for testing).
@@ -220,4 +221,42 @@ func deleteAccessKey(ctx context.Context, client iamAPI, targetKeyID, username s
 		return fmt.Errorf("iam:DeleteAccessKey failed: %w", err)
 	}
 	return nil
+}
+
+// AssumeRole calls sts:AssumeRole using static (long-lived) source credentials.
+func AssumeRole(ctx context.Context, sourceKey, sourceSecret, roleARN, sessionName, externalID string) (*SessionCredentials, error) {
+	cfg := staticConfig(sourceKey, sourceSecret)
+	client := sts.NewFromConfig(cfg)
+	return assumeRole(ctx, client, roleARN, sessionName, externalID)
+}
+
+// AssumeRoleWithSession is like AssumeRole but uses temporary session credentials
+// (e.g. after MFA via sts:GetSessionToken).
+func AssumeRoleWithSession(ctx context.Context, sourceKey, sourceSecret, sourceToken, roleARN, sessionName, externalID string) (*SessionCredentials, error) {
+	cfg := sessionConfig(sourceKey, sourceSecret, sourceToken)
+	client := sts.NewFromConfig(cfg)
+	return assumeRole(ctx, client, roleARN, sessionName, externalID)
+}
+
+func assumeRole(ctx context.Context, client stsAPI, roleARN, sessionName, externalID string) (*SessionCredentials, error) {
+	if sessionName == "" {
+		sessionName = "vop"
+	}
+	input := &sts.AssumeRoleInput{
+		RoleArn:         aws.String(roleARN),
+		RoleSessionName: aws.String(sessionName),
+	}
+	if externalID != "" {
+		input.ExternalId = aws.String(externalID)
+	}
+	out, err := client.AssumeRole(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("sts:AssumeRole failed: %w", err)
+	}
+	return &SessionCredentials{
+		AccessKeyID:     aws.ToString(out.Credentials.AccessKeyId),
+		SecretAccessKey: aws.ToString(out.Credentials.SecretAccessKey),
+		SessionToken:    aws.ToString(out.Credentials.SessionToken),
+		Expiration:      out.Credentials.Expiration.Format("2006-01-02T15:04:05Z"),
+	}, nil
 }

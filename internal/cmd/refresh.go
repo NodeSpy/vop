@@ -56,7 +56,7 @@ func cmdRefresh(_ *cobra.Command, args []string) error {
 	}
 
 	start := time.Now()
-	awsCreds, err := creds.Fetch(profile, profileName, client)
+	awsCreds, err := creds.Fetch(profile, profileName, client, c, opClientFor())
 	if err != nil {
 		return err
 	}

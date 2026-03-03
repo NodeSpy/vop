@@ -36,8 +36,13 @@ func RuntimeDir() string {
 }
 
 // Fetch retrieves AWS credentials for a profile from 1Password,
-// handling MFA/STS if configured.
-func Fetch(profile *config.Profile, profileName string, opClient op.Client) (*AWSCredentials, error) {
+// handling MFA/STS and role assumption if configured.
+//
+// cfg and clientFor are required when the profile has role_arn set (assumed-role
+// profiles). They are used to fetch the source profile's credentials before
+// calling sts:AssumeRole. Pass nil for both when calling recursively for a
+// source profile (which must not itself be an assumed-role profile).
+func Fetch(profile *config.Profile, profileName string, opClient op.Client, cfg *config.Config, clientFor func(*config.Profile) (op.Client, error)) (*AWSCredentials, error) {
 	if err := opClient.EnsureSignedIn(profile.OPAccount); err != nil {
 		return nil, fmt.Errorf("failed to sign into 1Password account %s: %w", profile.OPAccount, err)
 	}
@@ -96,6 +101,55 @@ func Fetch(profile *config.Profile, profileName string, opClient op.Client) (*AW
 			SecretAccessKey: stsCreds.SecretAccessKey,
 			SessionToken:    stsCreds.SessionToken,
 			Expiration:      stsCreds.Expiration,
+		}, nil
+	}
+
+	// Handle role assumption if configured.
+	if profile.IsAssumedRole() {
+		if cfg == nil {
+			return nil, fmt.Errorf("profile %q requires role assumption but no config was provided", profileName)
+		}
+		srcProfile, ok := cfg.Profiles[profile.SourceProfile]
+		if !ok {
+			return nil, fmt.Errorf("source_profile %q not found (referenced by profile %q)", profile.SourceProfile, profileName)
+		}
+		if srcProfile.IsAssumedRole() {
+			return nil, fmt.Errorf("chained role assumption is not supported: source_profile %q is itself an assumed-role profile", profile.SourceProfile)
+		}
+		srcClient, err := clientFor(srcProfile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client for source profile %q: %w", profile.SourceProfile, err)
+		}
+		// Fetch source credentials; pass nil cfg/clientFor — source cannot chain.
+		srcCreds, err := Fetch(srcProfile, profile.SourceProfile, srcClient, nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch source credentials for role assumption: %w", err)
+		}
+
+		ui.Info("Assuming role: %s", profile.RoleARN)
+		var assumed *awsclient.SessionCredentials
+		if srcCreds.SessionToken != "" {
+			assumed, err = awsclient.AssumeRoleWithSession(
+				context.Background(),
+				srcCreds.AccessKeyID, srcCreds.SecretAccessKey, srcCreds.SessionToken,
+				profile.RoleARN, profile.RoleSessionName, profile.ExternalID,
+			)
+		} else {
+			assumed, err = awsclient.AssumeRole(
+				context.Background(),
+				srcCreds.AccessKeyID, srcCreds.SecretAccessKey,
+				profile.RoleARN, profile.RoleSessionName, profile.ExternalID,
+			)
+		}
+		if err != nil {
+			return nil, err
+		}
+		ui.Info("Role assumed (expires: %s)", assumed.Expiration)
+		return &AWSCredentials{
+			AccessKeyID:     assumed.AccessKeyID,
+			SecretAccessKey: assumed.SecretAccessKey,
+			SessionToken:    assumed.SessionToken,
+			Expiration:      assumed.Expiration,
 		}, nil
 	}
 

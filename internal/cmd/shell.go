@@ -81,7 +81,7 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	awsCreds, err := creds.Fetch(profile, profileName, client)
+	awsCreds, err := creds.Fetch(profile, profileName, client, c, opClientFor())
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 	noRefresh, _ := cmd.Flags().GetBool("no-refresh")
 	stopRefresh := make(chan struct{})
 	if !noRefresh && awsCreds.Expiration != "" {
-		go autoRefresh(stopRefresh, profile, profileName, client, awsCreds.Expiration)
+		go autoRefresh(stopRefresh, profile, profileName, client, c, awsCreds.Expiration)
 	}
 
 	shell := os.Getenv("SHELL")
@@ -139,7 +139,7 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 // It calculates the refresh time as 75% of the remaining TTL, with a minimum
 // of 60 seconds and a maximum wait of 6 hours. After each refresh it
 // recalculates based on the new expiration.
-func autoRefresh(stop <-chan struct{}, profile *config.Profile, profileName string, client op.Client, expiration string) {
+func autoRefresh(stop <-chan struct{}, profile *config.Profile, profileName string, client op.Client, cfg *config.Config, expiration string) {
 	for {
 		refreshAt := calcRefreshTime(expiration)
 		if refreshAt <= 0 {
@@ -162,7 +162,7 @@ func autoRefresh(stop <-chan struct{}, profile *config.Profile, profileName stri
 
 		// Suppress informational output during background refresh
 		ui.Quiet = true
-		newCreds, err := creds.Fetch(profile, profileName, client)
+		newCreds, err := creds.Fetch(profile, profileName, client, cfg, opClientFor())
 		ui.Quiet = false
 
 		if err != nil {

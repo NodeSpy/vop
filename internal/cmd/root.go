@@ -154,6 +154,13 @@ func getCLIClient() op.Client {
 	return cliClient
 }
 
+// opClientFor returns a client-resolver function suitable for passing to
+// creds.Fetch as the clientFor argument. It delegates to getClientForProfile
+// so assumed-role source profiles use the correct 1Password backend.
+func opClientFor() func(*config.Profile) (op.Client, error) {
+	return getClientForProfile
+}
+
 // resolveProfile looks up a profile by exact name, and if not found,
 // suggests the closest match and falls back to the interactive picker.
 // Returns the resolved profile name, profile, and any error.
