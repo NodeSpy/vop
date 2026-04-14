@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/NodeSpy/vop/internal/config"
 	"github.com/NodeSpy/vop/internal/creds"
@@ -55,6 +57,7 @@ func cmdAgent(_ *cobra.Command, args []string) error {
 	credExists := fileExists(credFile)
 	jsonExists := fileExists(jsonFile)
 
+	// --- Section 1: Human context (status + paths) ---
 	fmt.Println()
 
 	if credExists || jsonExists {
@@ -71,30 +74,36 @@ func cmdAgent(_ *cobra.Command, args []string) error {
 	fmt.Printf("  %sCredentials file:%s %s\n", ui.Dim, ui.Reset, credFile)
 	fmt.Printf("  %sJSON file:%s        %s\n", ui.Dim, ui.Reset, jsonFile)
 	fmt.Println()
-	fmt.Printf("  %sEnvironment variables set in vop shell:%s\n", ui.Bold, ui.Reset)
-	fmt.Printf("    AWS_SHARED_CREDENTIALS_FILE=%s\n", credFile)
-	fmt.Printf("    VOP_CRED_FILE=%s\n", jsonFile)
-	fmt.Printf("    VOP_PROFILE=%s\n", profileName)
-	fmt.Println()
-	fmt.Printf("  %sFor AI agents / external tools:%s\n", ui.Bold, ui.Reset)
-	fmt.Printf("    Use AWS_SHARED_CREDENTIALS_FILE for AWS CLI/SDK tools.\n")
-	fmt.Printf("    Use VOP_CRED_FILE for the JSON credential file.\n")
-	fmt.Printf("    Run 'vop refresh' if credentials have expired.\n")
-	fmt.Println()
 
-	// Show agent policy instructions.
-	policyLabel := "default (read-only)"
-	if profile != nil && profile.AgentPolicy != "" {
-		policyLabel = "custom"
-	}
+	// --- Section 2: Copy block ---
 	instructions := config.DefaultAgentInstructions
 	if profile != nil {
 		instructions = profile.AgentInstructions()
 	}
-	fmt.Printf("  %sAgent policy:%s %s\n", ui.Bold, ui.Reset, policyLabel)
-	fmt.Printf("    %s\n", instructions)
+
+	var block strings.Builder
+	block.WriteString("## AWS Credentials (vop)\n")
+	block.WriteString("\n")
+	block.WriteString("This project uses vop-managed AWS credentials.\n")
+	block.WriteString("The following environment variables are set in the current shell:\n")
+	fmt.Fprintf(&block, "  AWS_SHARED_CREDENTIALS_FILE=%s\n", credFile)
+	fmt.Fprintf(&block, "  VOP_CRED_FILE=%s\n", jsonFile)
+	block.WriteString("\n")
+	block.WriteString("Use AWS_SHARED_CREDENTIALS_FILE for AWS CLI/SDK operations.\n")
+	block.WriteString("Run `vop refresh` if credentials have expired.\n")
+	block.WriteString("\n")
+	block.WriteString(wrapText(instructions, 64, ""))
+
+	printCopyBlock(block.String())
 	fmt.Println()
-	fmt.Printf("  %sChange with:%s vop edit %s\n", ui.Dim, ui.Reset, profileName)
+
+	// --- Section 3: Human context (policy info + credential_process) ---
+	policyLabel := "default (read-only)"
+	if profile != nil && profile.AgentPolicy != "" {
+		policyLabel = "custom"
+	}
+	fmt.Printf("  %sAgent policy:%s %s\n", ui.Bold, ui.Reset, policyLabel)
+	fmt.Printf("  %sChange with:%s  vop edit %s\n", ui.Dim, ui.Reset, profileName)
 	fmt.Println()
 
 	fmt.Printf("  %sAWS config (credential_process):%s\n", ui.Bold, ui.Reset)
@@ -103,6 +112,58 @@ func cmdAgent(_ *cobra.Command, args []string) error {
 	fmt.Println()
 
 	return nil
+}
+
+// printCopyBlock prints content inside a clearly demarcated box for copy-pasting.
+// The border lines are ANSI-colored; the content between them is plain text.
+func printCopyBlock(content string) {
+	label := " Copy into your AI agent config (e.g. CLAUDE.md) "
+	topBorder := "┌─" + label + strings.Repeat("─", 12) + "┐"
+	borderWidth := utf8.RuneCountInString(topBorder)
+	botBorder := "└" + strings.Repeat("─", borderWidth-2) + "┘"
+
+	fmt.Printf("  %s%s%s%s\n", ui.Cyan, ui.Bold, topBorder, ui.Reset)
+	fmt.Println()
+	for _, line := range strings.Split(content, "\n") {
+		fmt.Printf("  %s\n", line)
+	}
+	fmt.Println()
+	fmt.Printf("  %s%s%s%s\n", ui.Cyan, ui.Bold, botBorder, ui.Reset)
+}
+
+// wrapText wraps text at word boundaries to fit within width characters per line,
+// prefixing each line with indent. Preserves existing newlines.
+func wrapText(text string, width int, indent string) string {
+	var result strings.Builder
+	for i, paragraph := range strings.Split(text, "\n") {
+		if i > 0 {
+			result.WriteByte('\n')
+		}
+		if paragraph == "" {
+			result.WriteString(indent)
+			continue
+		}
+		words := strings.Fields(paragraph)
+		lineLen := 0
+		for j, word := range words {
+			wLen := utf8.RuneCountInString(word)
+			if j == 0 {
+				result.WriteString(indent)
+				result.WriteString(word)
+				lineLen = utf8.RuneCountInString(indent) + wLen
+			} else if lineLen+1+wLen > width {
+				result.WriteByte('\n')
+				result.WriteString(indent)
+				result.WriteString(word)
+				lineLen = utf8.RuneCountInString(indent) + wLen
+			} else {
+				result.WriteByte(' ')
+				result.WriteString(word)
+				lineLen += 1 + wLen
+			}
+		}
+	}
+	return result.String()
 }
 
 func fileExists(path string) bool {
