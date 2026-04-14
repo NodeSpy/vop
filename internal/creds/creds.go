@@ -170,6 +170,16 @@ func ExportToEnv(creds *AWSCredentials, profileName string) {
 	os.Unsetenv("AWS_DEFAULT_REGION")
 }
 
+// UnsetCredEnvVars removes the AWS credential environment variables so that
+// the AWS SDK falls through to the shared credentials file. Call this in
+// long-lived shell sessions where credentials are refreshed on disk via
+// WriteFiles.
+func UnsetCredEnvVars() {
+	os.Unsetenv("AWS_ACCESS_KEY_ID")
+	os.Unsetenv("AWS_SECRET_ACCESS_KEY")
+	os.Unsetenv("AWS_SESSION_TOKEN")
+}
+
 // WriteFiles writes credential files to the runtime directory.
 // Returns the paths to the AWS credentials file and JSON file.
 func WriteFiles(creds *AWSCredentials, profileName string) (credFile, jsonFile string, err error) {
@@ -203,6 +213,9 @@ func WriteFiles(creds *AWSCredentials, profileName string) (credFile, jsonFile s
 	}
 	if creds.SessionToken != "" {
 		jsonData["SessionToken"] = creds.SessionToken
+	}
+	if creds.Expiration != "" {
+		jsonData["Expiration"] = creds.Expiration
 	}
 	jBytes, err := json.MarshalIndent(jsonData, "", "  ")
 	if err != nil {
@@ -244,6 +257,9 @@ func ReadJSONFile(path string) (*AWSCredentials, string, error) {
 	}
 	if st, ok := raw["SessionToken"].(string); ok {
 		creds.SessionToken = st
+	}
+	if exp, ok := raw["Expiration"].(string); ok {
+		creds.Expiration = exp
 	}
 	profile := ""
 	if p, ok := raw["Profile"].(string); ok {

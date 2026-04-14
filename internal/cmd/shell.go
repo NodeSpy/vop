@@ -89,7 +89,14 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 	// Push to credential server if running (best-effort).
 	pushToServer(profileName, awsCreds)
 
-	creds.ExportToEnv(awsCreds, profileName)
+	// Set profile metadata but do NOT export AWS credential env vars.
+	// Credentials are served via AWS_SHARED_CREDENTIALS_FILE (set by
+	// WriteFiles) so that 'vop refresh' and autoRefresh can update them
+	// on disk without needing to modify the shell's environment.
+	os.Setenv("VOP_PROFILE", profileName)
+	os.Setenv("VAULTED_ENV", profileName)
+	os.Unsetenv("AWS_DEFAULT_REGION")
+	creds.UnsetCredEnvVars()
 
 	_, _, err = creds.WriteFiles(awsCreds, profileName)
 	if err != nil {

@@ -95,6 +95,9 @@ func TestWriteAndCleanupFiles(t *testing.T) {
 	if parsed["SessionToken"] != "FwoGZXIvYXdzEBYaDH..." {
 		t.Errorf("unexpected SessionToken: %v", parsed["SessionToken"])
 	}
+	if parsed["Expiration"] != "2026-02-18T02:00:00Z" {
+		t.Errorf("unexpected Expiration: %v", parsed["Expiration"])
+	}
 	// Version should be numeric 1
 	if v, ok := parsed["Version"].(float64); !ok || v != 1 {
 		t.Errorf("unexpected Version: %v", parsed["Version"])
@@ -169,6 +172,9 @@ func TestWriteFilesNoSessionToken(t *testing.T) {
 	if _, ok := parsed["SessionToken"]; ok {
 		t.Error("JSON file should not contain SessionToken when empty")
 	}
+	if _, ok := parsed["Expiration"]; ok {
+		t.Error("JSON file should not contain Expiration when empty")
+	}
 
 	CleanupFiles("basic")
 }
@@ -182,6 +188,7 @@ func TestReadJSONFile(t *testing.T) {
 		"AccessKeyId":     "AKIAEXAMPLE",
 		"SecretAccessKey": "SECRET",
 		"SessionToken":    "TOKEN",
+		"Expiration":      "2099-01-01T00:00:00Z",
 		"Profile":         "myprofile",
 	}
 	jBytes, _ := json.MarshalIndent(data, "", "  ")
@@ -201,6 +208,9 @@ func TestReadJSONFile(t *testing.T) {
 	}
 	if creds.SessionToken != "TOKEN" {
 		t.Errorf("expected SessionToken 'TOKEN', got %q", creds.SessionToken)
+	}
+	if creds.Expiration != "2099-01-01T00:00:00Z" {
+		t.Errorf("expected Expiration '2099-01-01T00:00:00Z', got %q", creds.Expiration)
 	}
 	if profile != "myprofile" {
 		t.Errorf("expected profile 'myprofile', got %q", profile)
@@ -227,6 +237,9 @@ func TestReadJSONFile_NoSessionToken(t *testing.T) {
 	}
 	if creds.SessionToken != "" {
 		t.Errorf("expected empty SessionToken, got %q", creds.SessionToken)
+	}
+	if creds.Expiration != "" {
+		t.Errorf("expected empty Expiration, got %q", creds.Expiration)
 	}
 	if profile != "" {
 		t.Errorf("expected empty profile, got %q", profile)
@@ -294,6 +307,29 @@ func TestExportToEnv_NoSessionToken(t *testing.T) {
 
 	ExportToEnv(creds, "nosts")
 
+	if got := os.Getenv("AWS_SESSION_TOKEN"); got != "" {
+		t.Errorf("expected AWS_SESSION_TOKEN to be unset, got %q", got)
+	}
+}
+
+func TestUnsetCredEnvVars(t *testing.T) {
+	os.Setenv("AWS_ACCESS_KEY_ID", "AKIA_OLD")
+	os.Setenv("AWS_SECRET_ACCESS_KEY", "SECRET_OLD")
+	os.Setenv("AWS_SESSION_TOKEN", "TOKEN_OLD")
+	defer func() {
+		os.Unsetenv("AWS_ACCESS_KEY_ID")
+		os.Unsetenv("AWS_SECRET_ACCESS_KEY")
+		os.Unsetenv("AWS_SESSION_TOKEN")
+	}()
+
+	UnsetCredEnvVars()
+
+	if got := os.Getenv("AWS_ACCESS_KEY_ID"); got != "" {
+		t.Errorf("expected AWS_ACCESS_KEY_ID to be unset, got %q", got)
+	}
+	if got := os.Getenv("AWS_SECRET_ACCESS_KEY"); got != "" {
+		t.Errorf("expected AWS_SECRET_ACCESS_KEY to be unset, got %q", got)
+	}
 	if got := os.Getenv("AWS_SESSION_TOKEN"); got != "" {
 		t.Errorf("expected AWS_SESSION_TOKEN to be unset, got %q", got)
 	}
