@@ -15,8 +15,8 @@ depends=('1password-cli')
 provides=('vop')
 conflicts=('vop')
 
-source_x86_64=("${url}/releases/download/v${pkgver}/vop-linux-amd64")
-source_aarch64=("${url}/releases/download/v${pkgver}/vop-linux-arm64")
+source_x86_64=("vop-linux-amd64-${pkgver}::${url}/releases/download/v${pkgver}/vop-linux-amd64")
+source_aarch64=("vop-linux-arm64-${pkgver}::${url}/releases/download/v${pkgver}/vop-linux-arm64")
 
 sha256sums_x86_64=('305883dcf9b1301c9835b56aad113a56cd1249b88d8326d4448fc4a9fa5f48ac')
 sha256sums_aarch64=('dff1a583cb634aca5fe8d19320bbc48161f255dd970d6a368e4caff29162413d')
