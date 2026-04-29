@@ -126,6 +126,18 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 		profile.FieldName("secret access key")+"="+newSK,
 	)
 	if err != nil {
+		// 1Password write failed — delete the orphaned AWS key so the user
+		// isn't left with two keys and no record of the new secret.
+		ui.Warn("Deleting orphaned AWS key %s (1Password update failed)...", newAK)
+		var delErr error
+		if sST != "" {
+			delErr = awsclient.DeleteAccessKeyWithSession(ctx, sAK, sSK, sST, newAK, profile.IAMUsername)
+		} else {
+			delErr = awsclient.DeleteAccessKey(ctx, sAK, sSK, newAK, profile.IAMUsername)
+		}
+		if delErr != nil {
+			ui.Error("Failed to delete orphaned key %s — clean up manually in AWS console.", newAK)
+		}
 		return fmt.Errorf("failed to update 1Password item: %w", err)
 	}
 	ui.Success("1Password updated.")
