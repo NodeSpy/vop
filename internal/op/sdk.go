@@ -3,6 +3,8 @@ package op
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 
 	onepassword "github.com/1password/onepassword-sdk-go"
@@ -163,8 +165,51 @@ func (s *SDKClient) EditItem(_, item string, assignments ...string) error {
 		}
 	}
 
+	// Strip fields of type Unsupported so the SDK Put has a chance.
+	kept := fullItem.Fields[:0]
+	for _, f := range fullItem.Fields {
+		if f.FieldType == onepassword.ItemFieldTypeUnsupported {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	fullItem.Fields = kept
+
 	_, err = s.inner.Items().Put(context.Background(), fullItem)
-	return err
+	if err == nil {
+		return nil
+	}
+
+	// SDK Put rejects items with legacy/orphan fields it cannot round-trip
+	// (empty-titled TOTPs, "add more" sections from old templates, etc.) with
+	// "Editing is not supported for unsupported fields". Fall back to the op
+	// CLI, which does partial updates and doesn't need to round-trip the item.
+	if cliErr := s.editViaCLI(item, assignments...); cliErr != nil {
+		return fmt.Errorf("SDK update failed (%v); CLI fallback also failed: %w", err, cliErr)
+	}
+	return nil
+}
+
+// editViaCLI shells out to the op CLI authenticated with the same service
+// account token. Used as a fallback when the SDK Put rejects an item.
+func (s *SDKClient) editViaCLI(item string, assignments ...string) error {
+	if _, err := exec.LookPath("op"); err != nil {
+		return fmt.Errorf("op CLI not found in PATH (needed as fallback for items the SDK cannot edit). Install: https://developer.1password.com/docs/cli/get-started/")
+	}
+
+	args := []string{"item", "edit", item}
+	if s.vault != "" {
+		args = append(args, "--vault", s.vault)
+	}
+	args = append(args, assignments...)
+
+	cmd := exec.Command("op", args...)
+	cmd.Env = append(os.Environ(), "OP_SERVICE_ACCOUNT_TOKEN="+s.token)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func (s *SDKClient) ListAccounts() ([]OPAccount, error) {
