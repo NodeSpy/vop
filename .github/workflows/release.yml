@@ -80,9 +80,49 @@ jobs:
           name: vop-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/vop-${{ matrix.os }}-${{ matrix.arch }}
 
+  deb:
+    name: Build .deb (${{ matrix.arch }})
+    needs: build
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v8
+        with:
+          name: vop-linux-${{ matrix.arch }}
+          path: dist/
+
+      - name: Install nfpm
+        run: |
+          curl -sfL https://github.com/goreleaser/nfpm/releases/download/v2.39.0/nfpm_2.39.0_Linux_x86_64.tar.gz \
+            | tar -xz -C /tmp nfpm
+          /tmp/nfpm --version
+
+      - name: Build .deb
+        env:
+          VERSION: ${{ github.ref_name }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          # Strip the leading 'v' from the tag for the .deb version field.
+          export VERSION="${VERSION#v}"
+          chmod +x "dist/vop-linux-${ARCH}"
+          mkdir -p out
+          /tmp/nfpm pkg --packager deb --target out/ --config nfpm.yaml
+          ls -la out/
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vop-deb-${{ matrix.arch }}
+          path: out/*.deb
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, deb]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -95,15 +135,22 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release
-          for dir in artifacts/vop-*; do
+          # Raw binaries (vop-linux-*, vop-darwin-*).
+          for dir in artifacts/vop-linux-* artifacts/vop-darwin-*; do
+            [ -d "$dir" ] || continue
             binary=$(basename "$dir")
             cp "$dir/$binary" "release/$binary"
             chmod +x "release/$binary"
           done
+          # .deb packages.
+          for dir in artifacts/vop-deb-*; do
+            [ -d "$dir" ] || continue
+            cp "$dir"/*.deb release/
+          done
 
-          # Create checksums
+          # Create checksums for everything we're shipping.
           cd release
-          sha256sum vop-* > checksums.txt
+          sha256sum vop-* vop_*.deb > checksums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -111,6 +158,7 @@ jobs:
           generate_release_notes: true
           files: |
             release/vop-*
+            release/vop_*.deb
             release/checksums.txt
 
       - name: Update Homebrew formula
@@ -198,7 +246,9 @@ jobs:
       - name: Prepare checksums
         run: |
           mkdir -p release
-          for dir in artifacts/vop-*; do
+          # AUR only needs the raw linux binaries — skip .deb artifacts.
+          for dir in artifacts/vop-linux-* artifacts/vop-darwin-*; do
+            [ -d "$dir" ] || continue
             binary=$(basename "$dir")
             cp "$dir/$binary" "release/$binary"
           done

@@ -1,0 +1,23 @@
+name: vop
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: NodeSpy <noreply@nodespy.io>
+description: |
+  AWS credential management via 1Password.
+  vop fetches AWS credentials from 1Password (via service account or the op CLI),
+  handles MFA / STS, and rotates IAM access keys safely.
+vendor: NodeSpy
+homepage: https://github.com/NodeSpy/vop
+license: MIT
+contents:
+  - src: ./dist/vop-linux-${ARCH}
+    dst: /usr/bin/vop
+    file_info:
+      mode: 0755
+  - src: ./LICENSE
+    dst: /usr/share/doc/vop/LICENSE
+recommends:
+  - 1password-cli
