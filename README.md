@@ -27,6 +27,7 @@ The installer auto-detects available package managers and offers the best instal
 
 - **Homebrew** -- if `brew` is in your PATH, offers `brew install vop`
 - **AUR** -- on Arch Linux with `yay` or `paru`, offers the `vop-bin` AUR package
+- **`.deb`** -- on Debian/Ubuntu (and derivatives), offers `apt install` of the official `.deb`
 - **Binary download** -- always available as a fallback, downloads to `/usr/local/bin`
 
 When multiple methods are available, you'll be prompted to choose. To force a specific method or override the install directory:
@@ -35,6 +36,7 @@ When multiple methods are available, you'll be prompted to choose. To force a sp
 # Force a specific method
 VOP_METHOD=brew curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
 VOP_METHOD=aur curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
+VOP_METHOD=deb curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
 VOP_METHOD=binary curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash
 
 # Custom install directory (binary method only)
@@ -63,6 +65,16 @@ yay -S vop-bin
 # or
 paru -S vop-bin
 ```
+
+### Debian / Ubuntu (.deb)
+
+```bash
+# amd64
+curl -fsSLO "https://github.com/NodeSpy/vop/releases/latest/download/vop_$(curl -fsSL https://api.github.com/repos/NodeSpy/vop/releases/latest | grep -oP '"tag_name": *"v\K[^"]+')_amd64.deb"
+sudo apt install ./vop_*.deb
+```
+
+`apt install` resolves `1password-cli` (recommended) and integrates with `apt list --installed` / `apt remove`. Upgrade on each release with `sudo apt install --only-upgrade vop` or re-run the install one-liner.
 
 ### Nix
 
@@ -128,7 +140,7 @@ If installed via Homebrew, use `brew upgrade vop` instead.
 curl -fsSL https://raw.githubusercontent.com/NodeSpy/vop/main/install.sh | bash -s -- uninstall
 ```
 
-This detects all vop installations on your system (Homebrew, AUR, standalone binary) and offers to remove them. If you have both a package-managed install and a standalone binary (e.g. from a previous one-liner install), it will warn about the conflict and default to removing only the standalone binary.
+This detects all vop installations on your system (Homebrew, AUR, .deb, standalone binary) and offers to remove them. If you have both a package-managed install and a standalone binary (e.g. from a previous one-liner install), it will warn about the conflict and default to removing only the standalone binary.
 
 To uninstall a specific method manually:
 
@@ -138,6 +150,9 @@ brew uninstall vop && brew untap NodeSpy/vop
 
 # AUR
 yay -R vop-bin
+
+# Debian/Ubuntu (.deb)
+sudo apt remove vop
 
 # Standalone binary
 sudo rm /usr/local/bin/vop

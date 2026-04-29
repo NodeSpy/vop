@@ -10,7 +10,7 @@
 #
 # Environment variables:
 #   VOP_INSTALL_DIR   Override binary install directory (default: /usr/local/bin)
-#   VOP_METHOD        Force install method: brew, aur, binary
+#   VOP_METHOD        Force install method: brew, aur, deb, binary
 #
 set -euo pipefail
 
@@ -68,6 +68,12 @@ is_arch_linux() {
 	[ -f /etc/os-release ] && grep -q '^ID=arch' /etc/os-release 2>/dev/null
 }
 
+is_debian_like() {
+	# Debian, Ubuntu, and downstream derivatives all set ID_LIKE=debian (or ID=debian/ubuntu).
+	[ -f /etc/os-release ] || return 1
+	grep -qE '^(ID|ID_LIKE)=.*\b(debian|ubuntu)\b' /etc/os-release 2>/dev/null
+}
+
 detect_aur_helper() {
 	for helper in yay paru; do
 		if has_cmd "$helper"; then
@@ -97,6 +103,12 @@ detect_existing() {
 		return
 	fi
 
+	# Check dpkg (.deb installed on Debian/Ubuntu).
+	if has_cmd dpkg && dpkg -s vop &>/dev/null 2>&1; then
+		echo "deb"
+		return
+	fi
+
 	# Installed but not via a package manager -- treat as binary.
 	echo "binary"
 }
@@ -118,6 +130,10 @@ detect_methods() {
 		fi
 	fi
 
+	if is_debian_like && has_cmd dpkg; then
+		methods="${methods:+$methods }deb"
+	fi
+
 	# Binary download is always available if curl exists.
 	methods="${methods:+$methods }binary"
 
@@ -128,6 +144,7 @@ method_label() {
 	case "$1" in
 	brew) echo "Homebrew (brew install vop)" ;;
 	aur) echo "AUR ($(detect_aur_helper) -S vop-bin)" ;;
+	deb) echo "Debian/Ubuntu .deb (apt install)" ;;
 	binary) echo "Binary download to ${INSTALL_DIR}" ;;
 	esac
 }
@@ -193,6 +210,84 @@ update_aur() {
 	"$helper" -S --needed vop-bin
 
 	ok "vop is up to date (AUR)."
+}
+
+# Resolves the latest release tag (e.g. "v0.3.10") via the GitHub API.
+fetch_latest_version() {
+	need_cmd curl
+	local api_response
+	api_response=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>&1) || {
+		error "Failed to fetch release info from GitHub."
+		error "This may be due to API rate limiting. Try again later."
+		exit 1
+	}
+
+	local version
+	if has_cmd jq; then
+		version=$(echo "$api_response" | jq -r '.tag_name // empty')
+	else
+		version=$(echo "$api_response" | grep -o '"tag_name": *"[^"]*"' | head -1 | grep -o '"v[^"]*"' | tr -d '"')
+	fi
+
+	if [ -z "${version:-}" ]; then
+		error "Failed to determine latest version."
+		exit 1
+	fi
+	echo "$version"
+}
+
+install_deb() {
+	need_cmd curl
+	need_cmd dpkg
+
+	local arch version deb_name download_url
+	arch=$(detect_arch)
+	version=$(fetch_latest_version)
+
+	# .deb version field has no leading 'v'.
+	local ver_no_v="${version#v}"
+	deb_name="vop_${ver_no_v}_${arch}.deb"
+	download_url="https://github.com/${REPO}/releases/download/${version}/${deb_name}"
+
+	# Already up to date?
+	if has_cmd vop && dpkg -s vop &>/dev/null 2>&1; then
+		local current
+		current=$(vop version 2>/dev/null | awk '{print $1}') || true
+		if [ "${current:-}" = "$version" ]; then
+			ok "vop is already up to date (${version})."
+			return
+		fi
+		info "Updating ${current:-unknown} -> ${version}"
+	fi
+
+	_TMP=$(mktemp --suffix=.deb)
+	trap 'rm -f "$_TMP"' EXIT
+
+	info "Downloading ${deb_name}..."
+	if ! curl -fsSL -o "$_TMP" "$download_url"; then
+		error "Download failed."
+		error "URL: ${download_url}"
+		exit 1
+	fi
+
+	info "Installing (requires sudo)..."
+	# Prefer apt — it resolves recommended deps (e.g. 1password-cli) automatically.
+	if has_cmd apt; then
+		sudo apt install -y "$_TMP"
+	else
+		sudo dpkg -i "$_TMP" || {
+			warn "dpkg install failed — trying to fix dependencies."
+			sudo apt-get install -f -y || true
+		}
+	fi
+
+	ok "Installed vop ${version} via .deb"
+	echo ""
+	info "Upgrade later by re-running this installer."
+}
+
+update_deb() {
+	install_deb
 }
 
 install_binary() {
@@ -312,6 +407,15 @@ find_all_installations() {
 		fi
 	fi
 
+	# Check dpkg (.deb).
+	if has_cmd dpkg && dpkg -s vop &>/dev/null 2>&1; then
+		local deb_bin
+		deb_bin=$(dpkg -L vop 2>/dev/null | awk '/\/usr\/bin\/vop$/{print; exit}') || true
+		if [ -n "$deb_bin" ] && [ -f "$deb_bin" ]; then
+			found+=("${deb_bin}:deb")
+		fi
+	fi
+
 	# Check common binary install locations.
 	local dir
 	for dir in /usr/local/bin /usr/bin "$HOME/.local/bin" "$HOME/bin" "${INSTALL_DIR}"; do
@@ -374,6 +478,7 @@ cmd_uninstall() {
 		case "$method" in
 		brew) printf '  %d) %s (%s, Homebrew)\n' "$count" "$path" "$ver" ;;
 		aur) printf '  %d) %s (%s, AUR/pacman)\n' "$count" "$path" "$ver" ;;
+		deb) printf '  %d) %s (%s, dpkg/.deb)\n' "$count" "$path" "$ver" ;;
 		binary) printf '  %d) %s (%s, standalone binary)\n' "$count" "$path" "$ver" ;;
 		esac
 	done <<<"$installs"
@@ -384,7 +489,7 @@ cmd_uninstall() {
 	while IFS= read -r line; do
 		local method="${line##*:}"
 		case "$method" in
-		brew | aur) has_pkg=true ;;
+		brew | aur | deb) has_pkg=true ;;
 		binary) has_binary=true ;;
 		esac
 	done <<<"$installs"
@@ -458,6 +563,15 @@ cmd_uninstall() {
 						sudo pacman -R vop-bin
 					fi
 					ok "Uninstalled vop-bin from AUR."
+					;;
+				deb)
+					info "Uninstalling .deb (requires sudo)..."
+					if has_cmd apt; then
+						sudo apt remove -y vop
+					else
+						sudo dpkg -r vop
+					fi
+					ok "Uninstalled vop via dpkg."
 					;;
 				binary)
 					info "Removing ${path}..."
@@ -587,6 +701,7 @@ main() {
 		case "$existing" in
 		brew) update_brew ;;
 		aur) update_aur ;;
+		deb) update_deb ;;
 		binary) install_binary ;; # install_binary handles the up-to-date check
 		esac
 
@@ -607,6 +722,7 @@ main() {
 	case "$method" in
 	brew) install_brew ;;
 	aur) install_aur ;;
+	deb) install_deb ;;
 	binary) install_binary ;;
 	*)
 		error "Unknown install method: $method"
