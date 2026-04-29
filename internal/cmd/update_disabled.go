@@ -5,7 +5,7 @@ package cmd
 import "github.com/spf13/cobra"
 
 // newUpdateCmd returns nil when built with the noupdate tag.
-// Package-manager builds (Homebrew, Nix, AUR) use this tag so the
+// Package-manager builds (Homebrew, AUR, .deb) use this tag so the
 // update command does not exist at all.
 func newUpdateCmd() *cobra.Command {
 	return nil

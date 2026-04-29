@@ -76,24 +76,6 @@ sudo apt install ./vop_*.deb
 
 `apt install` resolves `1password-cli` (recommended) and integrates with `apt list --installed` / `apt remove`. Upgrade on each release with `sudo apt install --only-upgrade vop` or re-run the install one-liner.
 
-### Nix
-
-```bash
-# Run directly
-nix run github:NodeSpy/vop
-
-# Install to profile
-nix profile install github:NodeSpy/vop
-
-# Or add to your flake inputs
-```
-
-A `flake.nix` is included in the repo. A dev shell is also available:
-
-```bash
-nix develop github:NodeSpy/vop
-```
-
 ### Manual download
 
 Download the binary for your platform from the [releases page](https://github.com/NodeSpy/vop/releases), make it executable, and place it in your PATH:
