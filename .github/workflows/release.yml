@@ -111,7 +111,14 @@ jobs:
           export VERSION="${VERSION#v}"
           chmod +x "dist/vop-linux-${ARCH}"
           mkdir -p out
-          /tmp/nfpm pkg --packager deb --target out/ --config nfpm.yaml
+
+          # nfpm substitutes env vars in select top-level fields, but not in
+          # `contents.src`. Pre-substitute the whole config via envsubst.
+          envsubst '${VERSION} ${ARCH}' < nfpm.yaml > nfpm.resolved.yaml
+          echo "--- resolved nfpm config ---"
+          cat nfpm.resolved.yaml
+
+          /tmp/nfpm pkg --packager deb --target out/ --config nfpm.resolved.yaml
           ls -la out/
 
       - name: Upload .deb artifact
