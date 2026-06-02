@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/NodeSpy/vop/internal/awsclient"
 	"github.com/NodeSpy/vop/internal/config"
@@ -33,6 +34,11 @@ func RuntimeDir() string {
 		xdg = runtimeDirFallback()
 	}
 	return filepath.Join(xdg, "vop")
+}
+
+// CredFilePath returns the path to the AWS shared credentials file for a profile.
+func CredFilePath(profileName string) string {
+	return filepath.Join(RuntimeDir(), profileName+".credentials")
 }
 
 // Fetch retrieves AWS credentials for a profile from 1Password,
@@ -239,6 +245,28 @@ func CleanupFiles(profileName string) {
 	os.Remove(base + ".credentials")
 	os.Remove(base + ".json")
 	os.Remove(dir) // only succeeds if empty
+}
+
+// LoadCached reads previously written credentials from disk and returns them if
+// they are still valid. Returns nil if no credential file exists, the file is
+// unreadable, or the credentials are within 60 seconds of expiry.
+// Credentials with no expiration (plain IAM keys) are always considered valid.
+func LoadCached(profileName string) *AWSCredentials {
+	jsonFile := filepath.Join(RuntimeDir(), profileName+".json")
+	c, _, err := ReadJSONFile(jsonFile)
+	if err != nil {
+		return nil
+	}
+	if c.Expiration != "" {
+		exp, err := time.Parse(time.RFC3339, c.Expiration)
+		if err != nil {
+			exp, err = time.Parse("2006-01-02T15:04:05Z", c.Expiration)
+		}
+		if err == nil && time.Until(exp) <= 60*time.Second {
+			return nil
+		}
+	}
+	return c
 }
 
 // ReadJSONFile reads a credential JSON file.

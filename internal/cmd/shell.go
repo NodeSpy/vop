@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/NodeSpy/vop/internal/config"
@@ -76,18 +74,28 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := getClientForProfile(profile)
-	if err != nil {
-		return err
-	}
+	// Use cached credentials if they are still valid — no 1Password interaction.
+	awsCreds := creds.LoadCached(profileName)
 
-	awsCreds, err := creds.Fetch(profile, profileName, client, c, opClientFor())
-	if err != nil {
-		return err
-	}
+	var client op.Client
+	if awsCreds == nil {
+		var err error
+		client, err = getClientForProfile(profile)
+		if err != nil {
+			return err
+		}
 
-	// Push to credential server if running (best-effort).
-	pushToServer(profileName, awsCreds)
+		awsCreds, err = creds.Fetch(profile, profileName, client, c, opClientFor())
+		if err != nil {
+			return err
+		}
+
+		if _, _, err := creds.WriteFiles(awsCreds, profileName); err != nil {
+			return fmt.Errorf("failed to write credential files: %w", err)
+		}
+
+		pushToServer(profileName, awsCreds)
+	}
 
 	// Set profile metadata but do NOT export AWS credential env vars.
 	// Credentials are served via AWS_SHARED_CREDENTIALS_FILE (set by
@@ -97,29 +105,17 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 	os.Setenv("VAULTED_ENV", profileName)
 	os.Unsetenv("AWS_DEFAULT_REGION")
 	creds.UnsetCredEnvVars()
-
-	_, _, err = creds.WriteFiles(awsCreds, profileName)
-	if err != nil {
-		return fmt.Errorf("failed to write credential files: %w", err)
-	}
-
-	// Ensure cleanup
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	go func() {
-		<-sigCh
-		creds.CleanupFiles(profileName)
-		os.Exit(0)
-	}()
+	os.Setenv("AWS_SHARED_CREDENTIALS_FILE", creds.CredFilePath(profileName))
 
 	ui.Info("Spawning sub-shell for '%s'. Type 'exit' to leave.", profileName)
 	ui.Info("Run 'vop agent' for credential paths and AI agent instructions.")
 	fmt.Println()
 
-	// Start background auto-refresh if credentials have an expiration
+	// Start background auto-refresh if credentials have an expiration.
+	// Requires the op client; skip if we used the cache and didn't build one.
 	noRefresh, _ := cmd.Flags().GetBool("no-refresh")
 	stopRefresh := make(chan struct{})
-	if !noRefresh && awsCreds.Expiration != "" {
+	if !noRefresh && awsCreds.Expiration != "" && client != nil {
 		go autoRefresh(stopRefresh, profile, profileName, client, c, awsCreds.Expiration)
 	}
 
@@ -137,8 +133,7 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 	_ = shellCmd.Run()
 
 	close(stopRefresh)
-	ui.Info("Shell exited. Cleaning up credentials.")
-	creds.CleanupFiles(profileName)
+	ui.Info("Shell exited.")
 	return nil
 }
 

@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
-	"syscall"
 
 	"github.com/NodeSpy/vop/internal/creds"
 	"github.com/NodeSpy/vop/internal/ui"
@@ -60,32 +58,35 @@ func cmdExec(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := getClientForProfile(profile)
-	if err != nil {
-		return err
-	}
+	// Use cached credentials if they are still valid — no 1Password interaction.
+	awsCreds := creds.LoadCached(profileName)
 
-	awsCreds, err := creds.Fetch(profile, profileName, client, c, opClientFor())
-	if err != nil {
-		return err
-	}
+	if awsCreds == nil {
+		client, err := getClientForProfile(profile)
+		if err != nil {
+			return err
+		}
 
-	// Push to credential server if running (best-effort).
-	pushToServer(profileName, awsCreds)
+		awsCreds, err = creds.Fetch(profile, profileName, client, c, opClientFor())
+		if err != nil {
+			return err
+		}
+
+		// Persist to disk so subsequent exec calls reuse without re-authing.
+		if _, _, err := creds.WriteFiles(awsCreds, profileName); err != nil {
+			return err
+		}
+
+		pushToServer(profileName, awsCreds)
+	}
 
 	creds.ExportToEnv(awsCreds, profileName)
 
-	_, _, err = creds.WriteFiles(awsCreds, profileName)
-	if err != nil {
-		return err
-	}
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	go func() {
-		<-sigCh
-		creds.CleanupFiles(profileName)
-	}()
+	// Ensure AWS_SHARED_CREDENTIALS_FILE points at the on-disk copy.
+	// WriteFiles already sets this when doing a fresh fetch; set it here
+	// for the cached path where we skipped WriteFiles.
+	credFile := creds.CredFilePath(profileName)
+	os.Setenv("AWS_SHARED_CREDENTIALS_FILE", credFile)
 
 	ui.Info("Running: %s", cmdArgs)
 
@@ -95,10 +96,7 @@ func cmdExec(_ *cobra.Command, args []string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()
 
-	err = cmd.Run()
-	creds.CleanupFiles(profileName)
-
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			os.Exit(exitErr.ExitCode())
 		}
