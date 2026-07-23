@@ -6,7 +6,9 @@ AWS credential management via 1Password. Spawn shells and run commands with AWS 
 
 - **Shell sessions** with AWS credentials injected as environment variables
 - **Exec mode** to run single commands with credentials
-- **MFA support** with automatic TOTP code retrieval from 1Password
+- **MFA support** with automatic TOTP retrieval from 1Password, or from any external command (`pass-otp`, `rbw`, `ykman`, KeePassXC, …)
+- **Flexible sources** — keys can come from a 1Password item or straight from `~/.aws/credentials`
+- **Rate-limit protection** — auth failures trigger a local cooldown so retries don't hammer 1Password
 - **Key rotation** via `vop rotate`
 - **Dual backend** — each profile can independently use:
   - **CLI backend**: uses the `op` CLI binary (interactive auth, biometric)
@@ -209,13 +211,22 @@ Profiles are stored in `~/.config/vop/profiles.json` (chmod 600). This file is i
 | Field | Required | Description |
 |---|---|---|
 | `op_account` | CLI only | 1Password account (e.g. `my.1password.com`) |
-| `op_item` | Yes | 1Password item name (e.g. `AWS - prod`) |
+| `op_item` | 1P source only | 1Password item name (e.g. `AWS - prod`) |
 | `op_vault` | SDK only | 1Password vault name (for `op://vault/item/field` refs) |
 | `service_account_token` | SDK only | 1Password service account token |
+| `aws_credentials_profile` | File source | Profile name in `~/.aws/credentials` to read/rotate keys against (see below) |
+| `aws_credentials_file` | No | Override path for the shared credentials file (defaults to `~/.aws/credentials`) |
+| `credentials_command` | Command source | Shell command whose stdout is the AWS keys (2-3 lines: access key, secret, optional session token) |
+| `mfa_totp_item` | No | 1Password item that holds the MFA TOTP |
+| `mfa_totp_command` | No | Shell command whose stdout is the current TOTP (see below) |
+| `mfa_serial` | No | Explicit MFA device ARN (overrides file/1P/IAM lookup) |
 | `iam_username` | No | IAM username (for key rotation) |
-| `mfa_item` | No | Separate 1Password item for MFA TOTP |
 | `description` | No | Profile description |
 | `agent_policy` | No | Custom agent instructions (default: read-only) |
+| `role_arn` | Role only | ARN of an IAM role to `sts:AssumeRole` into |
+| `source_profile` | Role only | Name of another vop profile whose creds are used to assume the role |
+| `role_session_name` | No | Session name passed to `sts:AssumeRole` (defaults to `vop`) |
+| `external_id` | No | ExternalId condition value for role assumption |
 
 ### Backend selection
 
@@ -223,6 +234,126 @@ Each profile independently chooses its backend:
 
 - **No `service_account_token`** = CLI backend (uses `op` binary, interactive auth)
 - **Has `service_account_token`** = SDK backend (pure Go, no external binaries)
+
+### Alternative credential sources
+
+By default, vop reads AWS keys from a 1Password item. Three optional fields let you source the base keys and/or the TOTP from somewhere else:
+
+- `aws_credentials_profile` — read the keys straight from `~/.aws/credentials`
+- `credentials_command` — read the keys from any shell command (e.g. `pass aws/prod`)
+- `mfa_totp_command` — read the TOTP from any shell command (e.g. `pass otp aws/prod`, `ykman`, `rbw`, `keepassxc-cli`)
+
+These are independent — mix and match freely. See the [Combining sources](#combining-sources) matrix below.
+
+#### Reading keys from `~/.aws/credentials`
+
+Set `aws_credentials_profile` to the section name in your shared credentials file. vop will read the access key and secret from there instead of 1Password, and `vop rotate` will write the new keys back to the same section (preserving comments, other profiles, and file permissions).
+
+```json
+{
+  "profiles": {
+    "ednition": {
+      "aws_credentials_profile": "ednition",
+      "mfa_totp_command": "pass otp aws/ednition"
+    }
+  }
+}
+```
+
+vop discovers `mfa_serial` automatically from `~/.aws/config` (or `~/.aws/credentials`, wherever the AWS CLI put it) — no need to duplicate it in the vop profile. Override via the `mfa_serial` field only if you need something different from the AWS CLI's view. Override the credentials file path with `aws_credentials_file` if it isn't at `~/.aws/credentials`.
+
+#### Reading keys from `pass` (or any other command)
+
+`credentials_command` runs an arbitrary shell command and parses its stdout as the base AWS keys. vop uses `sh -c`, inherits your environment (so `gpg-agent` / DBus / TTY prompts keep working), and expects:
+
+- Line 1: `aws_access_key_id`
+- Line 2: `aws_secret_access_key`
+- Line 3 (optional): `aws_session_token`
+
+Blank lines and lines starting with `#` are ignored, so you can annotate your entries.
+
+##### Quick start with `pass`
+
+The recommended encrypted-at-rest setup: both the access-key pair and the TOTP live in [`pass`](https://www.passwordstore.org/), guarded by GPG. `gpg-agent`'s cache TTL keeps you from re-entering the passphrase on every call, and nothing sensitive sits on disk in plaintext.
+
+```bash
+# 1. Store the access key + secret as a two-line pass entry.
+pass insert -m aws/prod
+# Editor opens; paste:
+#   AKIAIOSFODNN7EXAMPLE
+#   wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+# 2. Store the TOTP seed (via pass-otp).
+pass otp insert aws/prod
+# Paste the otpauth:// URI or the base32 secret.
+
+# 3. Point vop at both.
+```
+
+Then in `~/.config/vop/profiles.json`:
+
+```json
+{
+  "profiles": {
+    "prod": {
+      "credentials_command": "pass aws/prod",
+      "mfa_totp_command": "pass otp aws/prod",
+      "mfa_serial": "arn:aws:iam::123456789012:mfa/daniel"
+    }
+  }
+}
+```
+
+That's it — `vop prod` unlocks `pass` (once per `gpg-agent` window) and hands you an MFA-authenticated shell. No `op` CLI, no 1Password service account, no plaintext keys on disk.
+
+##### Other tools
+
+Any command that produces the 2-3-line format works directly. For tools that don't, wrap them:
+
+```bash
+# ~/.local/bin/aws-from-1p — mixing 1Password items with pass-otp
+#!/bin/bash
+op read "op://Personal/AWS $1/access key id"
+op read "op://Personal/AWS $1/secret access key"
+```
+
+```json
+"credentials_command": "aws-from-1p prod"
+```
+
+##### Rotation
+
+`vop rotate` doesn't support `credentials_command` sources — vop can't write back to an arbitrary command. When your key ages out, rotate manually with the source tool (`pass edit aws/prod`) and vop picks up the new value on the next call.
+
+#### External TOTP command
+
+Set `mfa_totp_command` to a shell command that prints the current 6-digit code. vop runs it via `sh -c`, inherits your environment (so `gpg-agent`, DBus, and TTY prompts keep working), and uses the trimmed last non-empty line as the code. Takes precedence over `mfa_totp_item` when both are set.
+
+Examples:
+
+```json
+"mfa_totp_command": "pass otp aws/prod"
+"mfa_totp_command": "rbw get --raw code aws-prod"
+"mfa_totp_command": "ykman oath accounts code -s aws-prod"
+"mfa_totp_command": "keepassxc-cli show -a otp ~/vault.kdbx aws-prod"
+```
+
+#### Combining sources
+
+The fields are independent — mix and match freely:
+
+| Base keys | TOTP | Config |
+|---|---|---|
+| 1Password | 1Password | (default) — `op_item`, `mfa_totp_item` |
+| 1Password | External | `op_item` + `mfa_totp_command` |
+| AWS file | 1Password | `aws_credentials_profile` + `mfa_totp_item` |
+| AWS file | External | `aws_credentials_profile` + `mfa_totp_command` |
+| Command | 1Password | `credentials_command` + `mfa_totp_item` |
+| Command | External | `credentials_command` + `mfa_totp_command` |
+
+Precedence when multiple sources are set: `credentials_command` > `aws_credentials_profile` > `op_item`. When a profile has no 1P interaction at all, vop skips the `op` sign-in entirely — you can use these profiles without the `op` CLI installed.
+
+> `vop add` and `vop edit` don't prompt for these fields yet; add them by editing `~/.config/vop/profiles.json` directly.
 
 ### Setting up a 1Password service account
 
@@ -269,6 +400,7 @@ The token is stored in `~/.config/vop/profiles.json` which is chmod 600 and shou
 | `vop test <profile>` | Test credentials with STS |
 | `vop cat` | Print profiles config (redacts tokens) |
 | `vop rotate [profile]` | Rotate IAM access keys (picker if no arg) |
+| `vop unlock <profile>` | Clear a profile's rate-limit cooldown after a failed auth |
 | `vop migrate [vault]` | Migrate from Vaulted |
 | `vop check` | Check prerequisites and configuration |
 | `vop version` | Print version information |

@@ -63,6 +63,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newCatCmd())
 	root.AddCommand(newServeCmd())
 	root.AddCommand(newAuthCmd())
+	root.AddCommand(newUnlockCmd())
 
 	return root
 }
@@ -134,8 +135,13 @@ func saveConfig(c *config.Config) error {
 
 // getClientForProfile returns the appropriate op.Client for the given profile.
 // If the profile has a service account token, it returns an SDK client;
-// otherwise it returns a CLI client.
+// otherwise it returns a CLI client. Returns (nil, nil) when the profile
+// doesn't need 1Password at all (aws-credentials-file source + external
+// TOTP command).
 func getClientForProfile(profile *config.Profile) (op.Client, error) {
+	if !profile.UsesOnePassword() {
+		return nil, nil
+	}
 	if profile.UsesSDK() {
 		return op.NewSDK(profile.ServiceAccountToken, profile.OPVault)
 	}

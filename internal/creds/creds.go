@@ -49,46 +49,53 @@ func CredFilePath(profileName string) string {
 // calling sts:AssumeRole. Pass nil for both when calling recursively for a
 // source profile (which must not itself be an assumed-role profile).
 func Fetch(profile *config.Profile, profileName string, opClient op.Client, cfg *config.Config, clientFor func(*config.Profile) (op.Client, error)) (*AWSCredentials, error) {
-	if err := opClient.EnsureSignedIn(profile.OPAccount); err != nil {
-		return nil, fmt.Errorf("failed to sign into 1Password account %s: %w", profile.OPAccount, err)
-	}
-
-	ui.Info("Fetching credentials from: %s", profile.OPItem)
-
-	accessKey, err := opClient.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("access key id"))
-	if err != nil {
+	// Bail early if we're in a post-failure cooldown. This protects against
+	// rapid retries hammering 1Password after an MFA/TOTP mismatch or
+	// after 1P has already signalled a rate limit.
+	if err := CheckCooldown(profileName); err != nil {
 		return nil, err
 	}
-	secretKey, err := opClient.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("secret access key"))
+
+	// Sign into 1P only if this profile actually needs it (base keys or
+	// TOTP live in 1P).
+	if profile.UsesOnePassword() {
+		if err := opClient.EnsureSignedIn(profile.OPAccount); err != nil {
+			RecordFailure(profileName, err)
+			return nil, fmt.Errorf("failed to sign into 1Password account %s: %w", profile.OPAccount, err)
+		}
+	}
+
+	accessKey, secretKey, sessionToken, err := FetchBaseKeys(profile, opClient)
 	if err != nil {
+		RecordFailure(profileName, err)
 		return nil, err
 	}
 
 	creds := &AWSCredentials{
 		AccessKeyID:     accessKey,
 		SecretAccessKey: secretKey,
+		SessionToken:    sessionToken,
 	}
 
-	// Handle MFA if configured
-	if profile.MFATOTPItem != "" {
-		ui.Info("MFA configured — fetching TOTP from: %s", profile.MFATOTPItem)
+	// If the source already provided a session token (e.g. a
+	// credentials_command that shelled out to an SSO-backed tool), the
+	// MFA/STS step is skipped — the creds are already elevated. Role
+	// assumption below will still run if configured.
+	if sessionToken != "" && (profile.MFATOTPItem != "" || profile.MFATOTPCommand != "") {
+		ui.Warn("credentials_command returned a session token; skipping MFA/STS step")
+	}
 
-		totp, err := opClient.GetTOTP(profile.OPAccount, profile.MFATOTPItem)
+	// Handle MFA if configured AND the source didn't already elevate.
+	if sessionToken == "" && (profile.MFATOTPItem != "" || profile.MFATOTPCommand != "") {
+		totp, err := FetchTOTP(profile, opClient)
 		if err != nil {
+			RecordFailure(profileName, err)
 			return nil, err
 		}
 
-		serialNumber, _ := opClient.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("mfa serial"))
-		if serialNumber == "" {
-			ui.Info("Looking up MFA serial via AWS IAM...")
-			serialNumber, err = awsclient.ListMFADevices(
-				context.Background(),
-				creds.AccessKeyID, creds.SecretAccessKey,
-				profile.IAMUsername,
-			)
-			if err != nil {
-				return nil, err
-			}
+		serialNumber, err := ResolveMFASerial(profile, opClient, creds)
+		if err != nil {
+			return nil, err
 		}
 
 		ui.Info("Requesting STS session token...")
@@ -98,10 +105,16 @@ func Fetch(profile *config.Profile, profileName string, opClient op.Client, cfg 
 			serialNumber, totp,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("STS get-session-token failed (TOTP may have expired): %w", err)
+			// MFA/TOTP mismatch is the classic trigger for 1P rate limiting:
+			// the user retries repeatedly and each retry fetches a fresh TOTP.
+			// Record the failure so subsequent runs hit the cooldown.
+			wrapped := fmt.Errorf("STS get-session-token failed (TOTP may have expired or system clock is out of sync): %w", err)
+			RecordFailure(profileName, wrapped)
+			return nil, wrapped
 		}
 
 		ui.Info("Session token obtained (expires: %s)", stsCreds.Expiration)
+		ClearFailures(profileName)
 		return &AWSCredentials{
 			AccessKeyID:     stsCreds.AccessKeyID,
 			SecretAccessKey: stsCreds.SecretAccessKey,
@@ -151,6 +164,7 @@ func Fetch(profile *config.Profile, profileName string, opClient op.Client, cfg 
 			return nil, err
 		}
 		ui.Info("Role assumed (expires: %s)", assumed.Expiration)
+		ClearFailures(profileName)
 		return &AWSCredentials{
 			AccessKeyID:     assumed.AccessKeyID,
 			SecretAccessKey: assumed.SecretAccessKey,
@@ -159,7 +173,101 @@ func Fetch(profile *config.Profile, profileName string, opClient op.Client, cfg 
 		}, nil
 	}
 
+	ClearFailures(profileName)
 	return creds, nil
+}
+
+// FetchBaseKeys returns the long-lived access key / secret for a profile,
+// pulling from an external command, the AWS shared credentials file, or
+// 1Password depending on how the profile is configured. Precedence:
+// credentials_command > aws_credentials_profile > op_item.
+//
+// If the source returns a non-empty session token (e.g. a `pass` entry
+// that stores already-elevated creds), it is returned as the third value
+// so the caller can skip the MFA/STS step.
+func FetchBaseKeys(profile *config.Profile, opClient op.Client) (accessKey, secretKey, sessionToken string, err error) {
+	if profile.UsesCredentialsCommand() {
+		return RunCredentialsCommand(profile.CredentialsCommand)
+	}
+
+	if profile.UsesAWSCredentialsFile() {
+		path := ResolveAWSCredentialsPath(profile.AWSCredentialsFile)
+		ui.Info("Reading credentials from %s [%s]", path, profile.AWSCredentialsProfile)
+		return ReadAWSCredentialsFile(path, profile.AWSCredentialsProfile)
+	}
+
+	ui.Info("Fetching credentials from: %s", profile.OPItem)
+	ak, err := opClient.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("access key id"))
+	if err != nil {
+		return "", "", "", err
+	}
+	sk, err := opClient.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("secret access key"))
+	if err != nil {
+		return "", "", "", err
+	}
+	return ak, sk, "", nil
+}
+
+// WriteBaseKeys persists the new long-lived access key / secret for a
+// profile, sending them to either the AWS shared credentials file or the
+// configured 1Password item.
+func WriteBaseKeys(profile *config.Profile, opClient op.Client, accessKey, secretKey string) error {
+	if profile.UsesAWSCredentialsFile() {
+		path := ResolveAWSCredentialsPath(profile.AWSCredentialsFile)
+		ui.Info("Writing new credentials to %s [%s]", path, profile.AWSCredentialsProfile)
+		return WriteAWSCredentialsFileKeys(path, profile.AWSCredentialsProfile, accessKey, secretKey)
+	}
+	ui.Info("Updating 1Password item...")
+	return opClient.EditItem(profile.OPAccount, profile.OPItem,
+		profile.FieldName("access key id")+"="+accessKey,
+		profile.FieldName("secret access key")+"="+secretKey,
+	)
+}
+
+// FetchTOTP returns the current TOTP code from whichever source the
+// profile is configured to use. MFATOTPCommand takes precedence over
+// MFATOTPItem so users can migrate off 1P TOTP without editing the item.
+func FetchTOTP(profile *config.Profile, opClient op.Client) (string, error) {
+	if profile.MFATOTPCommand != "" {
+		ui.Info("MFA configured — running mfa_totp_command")
+		return RunTOTPCommand(profile.MFATOTPCommand)
+	}
+	ui.Info("MFA configured — fetching TOTP from: %s", profile.MFATOTPItem)
+	return opClient.GetTOTP(profile.OPAccount, profile.MFATOTPItem)
+}
+
+// ResolveMFASerial returns the ARN of the MFA device to authenticate against.
+// Preference order:
+//  1. profile.MFASerial (explicit override on the vop profile)
+//  2. mfa_serial recorded alongside the AWS credentials (for file-sourced
+//     profiles — this is where the AWS CLI itself stores it)
+//  3. 1Password field lookup (if the profile has an OPItem)
+//  4. iam:ListMFADevices as a last resort (requires the base keys to work)
+func ResolveMFASerial(profile *config.Profile, opClient op.Client, baseCreds *AWSCredentials) (string, error) {
+	if profile.MFASerial != "" {
+		return profile.MFASerial, nil
+	}
+	if profile.UsesAWSCredentialsFile() {
+		credsPath := ResolveAWSCredentialsPath(profile.AWSCredentialsFile)
+		if serial, _ := LookupAWSMFASerial(DefaultAWSConfigFile(), credsPath, profile.AWSCredentialsProfile); serial != "" {
+			return serial, nil
+		}
+	}
+	if profile.OPItem != "" && !profile.UsesAWSCredentialsFile() {
+		if serial, _ := opClient.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("mfa serial")); serial != "" {
+			return serial, nil
+		}
+	}
+	ui.Info("Looking up MFA serial via AWS IAM...")
+	serial, err := awsclient.ListMFADevices(
+		context.Background(),
+		baseCreds.AccessKeyID, baseCreds.SecretAccessKey,
+		profile.IAMUsername,
+	)
+	if err != nil {
+		return "", err
+	}
+	return serial, nil
 }
 
 // ExportToEnv sets the AWS credential environment variables.

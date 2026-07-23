@@ -11,12 +11,45 @@ import (
 
 // Profile represents a single AWS/1Password profile mapping.
 type Profile struct {
-	OPAccount   string `json:"op_account"`
-	OPItem      string `json:"op_item"`
+	OPAccount   string `json:"op_account,omitempty"`
+	OPItem      string `json:"op_item,omitempty"`
 	OPVault     string `json:"op_vault,omitempty"`
 	Description string `json:"description,omitempty"`
 	MFATOTPItem string `json:"mfa_totp_item,omitempty"`
 	IAMUsername string `json:"iam_username,omitempty"`
+
+	// AWSCredentialsProfile, if set, tells vop to read the base access key
+	// and secret from ~/.aws/credentials under this profile name instead of
+	// from 1Password. Useful when the keys are already managed by the AWS
+	// CLI and you only need vop for MFA/session/role-assumption ergonomics.
+	AWSCredentialsProfile string `json:"aws_credentials_profile,omitempty"`
+
+	// AWSCredentialsFile overrides the path to the shared credentials file.
+	// Defaults to ~/.aws/credentials (or $AWS_SHARED_CREDENTIALS_FILE).
+	AWSCredentialsFile string `json:"aws_credentials_file,omitempty"`
+
+	// CredentialsCommand, if set, is executed via `sh -c` and its stdout
+	// is parsed as the base AWS credentials. Output must be at least two
+	// lines: line 1 is the access key ID, line 2 is the secret access key,
+	// optional line 3 is a session token. Takes precedence over both
+	// AWSCredentialsProfile and the 1Password item.
+	//
+	// Designed to work naturally with `pass` (two-line entry): store the
+	// access key on line 1 and the secret on line 2, then set this to
+	// `pass aws/prod`. For tools that don't produce that layout, wrap
+	// them in a small shell script.
+	CredentialsCommand string `json:"credentials_command,omitempty"`
+
+	// MFATOTPCommand, if set, is executed via `sh -c` and its trimmed stdout
+	// is used as the current TOTP code. Takes precedence over MFATOTPItem.
+	// Lets users delegate TOTP storage to any external tool: pass-otp, rbw,
+	// ykman, keepassxc-cli, etc.
+	MFATOTPCommand string `json:"mfa_totp_command,omitempty"`
+
+	// MFASerial, if set, is the ARN of the MFA device. Skips the 1P field
+	// lookup and iam:ListMFADevices fallback. Handy when using an
+	// AWS-credentials-file source that doesn't have MFA metadata in 1P.
+	MFASerial string `json:"mfa_serial,omitempty"`
 
 	// FieldPrefix is prepended to 1Password field labels when reading/writing
 	// AWS credentials. For example, "vop." means fields are stored as
@@ -83,6 +116,35 @@ func (p *Profile) UsesSDK() bool {
 // via sts:AssumeRole using the credentials of another (source) profile.
 func (p *Profile) IsAssumedRole() bool {
 	return p.RoleARN != ""
+}
+
+// UsesCredentialsCommand returns true if base AWS keys should be fetched
+// by executing an external command (e.g. `pass aws/prod`).
+func (p *Profile) UsesCredentialsCommand() bool {
+	return p.CredentialsCommand != ""
+}
+
+// UsesAWSCredentialsFile returns true if base AWS keys should be read from
+// (and rotated into) the shared credentials file instead of 1Password.
+func (p *Profile) UsesAWSCredentialsFile() bool {
+	return p.AWSCredentialsProfile != "" && !p.UsesCredentialsCommand()
+}
+
+// UsesOnePassword returns true if any 1Password interaction is required
+// for this profile: either the base AWS keys or the TOTP live in 1P.
+func (p *Profile) UsesOnePassword() bool {
+	if p.UsesCredentialsCommand() {
+		// Base keys come from the command. 1P is only needed if the TOTP
+		// is also in 1P.
+		return p.MFATOTPItem != "" && p.MFATOTPCommand == ""
+	}
+	if !p.UsesAWSCredentialsFile() {
+		return true // base keys are in 1P
+	}
+	if p.MFATOTPItem != "" && p.MFATOTPCommand == "" {
+		return true // TOTP is in 1P
+	}
+	return false
 }
 
 // Config is the top-level configuration structure.

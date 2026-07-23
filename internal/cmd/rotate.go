@@ -59,6 +59,10 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot rotate keys for assumed-role profile %q: key rotation must be performed on the source profile (%q)", profileName, profile.SourceProfile)
 	}
 
+	if profile.UsesCredentialsCommand() {
+		return fmt.Errorf("cannot rotate keys for profile %q: base credentials come from `credentials_command` and vop can't write back to an arbitrary command. Rotate manually and update the source (e.g. `pass edit aws/prod`)", profileName)
+	}
+
 	client, err := getClientForProfile(profile)
 	if err != nil {
 		return err
@@ -74,20 +78,21 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 
 	// Read the permanent (IAM) credentials — we need both to know what to
 	// delete and to roll back if verification fails.
-	oldAK, err := client.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("access key id"))
-	if err != nil {
-		return err
-	}
-	oldSK, err := client.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("secret access key"))
+	oldAK, oldSK, _, err := creds.FetchBaseKeys(profile, client)
 	if err != nil {
 		return err
 	}
 	ui.Info("Current access key: %s", oldAK)
 
+	storageLabel := "1Password"
+	if profile.UsesAWSCredentialsFile() {
+		storageLabel = fmt.Sprintf("~/.aws/credentials [%s]", profile.AWSCredentialsProfile)
+	}
+
 	// Confirm before proceeding.
 	fmt.Println()
 	ui.Warn("This will rotate the AWS access key for profile '%s'.", profileName)
-	ui.Warn("A new key will be created, stored in 1Password, and the old key deleted.")
+	ui.Warn("A new key will be created, stored in %s, and the old key deleted.", storageLabel)
 	fmt.Println()
 	if !ui.PromptYN("Proceed with rotation?", false) {
 		ui.Info("Rotation cancelled.")
@@ -119,16 +124,12 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 	}
 	ui.Info("New access key: %s", newAK)
 
-	// 2. Update 1Password with the new permanent key.
-	ui.Info("Updating 1Password item...")
-	err = client.EditItem(profile.OPAccount, profile.OPItem,
-		profile.FieldName("access key id")+"="+newAK,
-		profile.FieldName("secret access key")+"="+newSK,
-	)
+	// 2. Persist the new permanent key to whichever storage this profile uses.
+	err = creds.WriteBaseKeys(profile, client, newAK, newSK)
 	if err != nil {
-		// 1Password write failed — delete the orphaned AWS key so the user
-		// isn't left with two keys and no record of the new secret.
-		ui.Warn("Deleting orphaned AWS key %s (1Password update failed)...", newAK)
+		// Write failed — delete the orphaned AWS key so the user isn't
+		// left with two keys and no record of the new secret.
+		ui.Warn("Deleting orphaned AWS key %s (%s update failed)...", newAK, storageLabel)
 		var delErr error
 		if sST != "" {
 			delErr = awsclient.DeleteAccessKeyWithSession(ctx, sAK, sSK, sST, newAK, profile.IAMUsername)
@@ -138,9 +139,9 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 		if delErr != nil {
 			ui.Error("Failed to delete orphaned key %s — clean up manually in AWS console.", newAK)
 		}
-		return fmt.Errorf("failed to update 1Password item: %w", err)
+		return fmt.Errorf("failed to update %s: %w", storageLabel, err)
 	}
-	ui.Success("1Password updated.")
+	ui.Success("%s updated.", storageLabel)
 
 	// 3. Verify new credentials. If MFA is configured, we need to get a
 	// fresh STS session with the new key. We must wait for the TOTP to
@@ -148,9 +149,9 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 	var identity *awsclient.CallerIdentity
 	var testErr error
 
-	if profile.MFATOTPItem != "" {
+	if profile.MFATOTPItem != "" || profile.MFATOTPCommand != "" {
 		// Get the current TOTP so we know what to wait past.
-		firstTOTP, _ := client.GetTOTP(profile.OPAccount, profile.MFATOTPItem)
+		firstTOTP, _ := creds.FetchTOTP(profile, client)
 
 		ui.Info("Waiting for new TOTP window and key propagation...")
 		// Poll until the TOTP changes (new 30s window) or timeout after 45s.
@@ -158,7 +159,7 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 		var freshTOTP string
 		for time.Now().Before(deadline) {
 			time.Sleep(3 * time.Second)
-			freshTOTP, _ = client.GetTOTP(profile.OPAccount, profile.MFATOTPItem)
+			freshTOTP, _ = creds.FetchTOTP(profile, client)
 			if freshTOTP != "" && freshTOTP != firstTOTP {
 				break
 			}
@@ -166,9 +167,19 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 		if freshTOTP == "" || freshTOTP == firstTOTP {
 			testErr = fmt.Errorf("timed out waiting for TOTP to change")
 		} else {
-			serialNumber, _ := client.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("mfa serial"))
+			// For MFA serial, prefer explicit config, then the AWS
+			// credentials/config file, then any 1P field, else fall back
+			// to iam:ListMFADevices via session creds (the new key may not
+			// yet be MFA-authorized without a session).
+			serialNumber := profile.MFASerial
+			if serialNumber == "" && profile.UsesAWSCredentialsFile() {
+				credsPath := creds.ResolveAWSCredentialsPath(profile.AWSCredentialsFile)
+				serialNumber, _ = creds.LookupAWSMFASerial(creds.DefaultAWSConfigFile(), credsPath, profile.AWSCredentialsProfile)
+			}
+			if serialNumber == "" && profile.OPItem != "" && !profile.UsesAWSCredentialsFile() {
+				serialNumber, _ = client.ReadField(profile.OPAccount, profile.OPItem, profile.FieldName("mfa serial"))
+			}
 			if serialNumber == "" {
-				// Use session creds to look up MFA serial (new key may not work yet without MFA).
 				if sST != "" {
 					serialNumber, _ = awsclient.ListMFADevices(ctx, sAK, sSK, profile.IAMUsername)
 				} else {
@@ -196,14 +207,11 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 	}
 
 	if testErr != nil {
-		// ROLLBACK: restore old key in 1Password, delete the new key.
+		// ROLLBACK: restore old key in storage, delete the new AWS key.
 		ui.Error("New credentials failed verification: %s", testErr)
-		ui.Warn("Rolling back 1Password...")
+		ui.Warn("Rolling back %s...", storageLabel)
 
-		_ = client.EditItem(profile.OPAccount, profile.OPItem,
-			profile.FieldName("access key id")+"="+oldAK,
-			profile.FieldName("secret access key")+"="+oldSK,
-		)
+		_ = creds.WriteBaseKeys(profile, client, oldAK, oldSK)
 
 		ui.Warn("Deleting failed key: %s", newAK)
 		if sST != "" {
