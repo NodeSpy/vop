@@ -11,15 +11,19 @@ import (
 
 // FailureRecord tracks recent failed credential fetches for a profile.
 // Persisted to disk so the cooldown survives across vop invocations,
-// preventing rapid retries from hammering 1Password (which triggers
-// account-level rate limits, especially with MFA out of sync).
+// preventing rapid retries from hammering the upstream credential source
+// (1Password, pass/gpg-agent, etc.) after an auth failure like an
+// out-of-sync MFA code.
 type FailureRecord struct {
 	FirstFailure time.Time `json:"first_failure"`
 	LastFailure  time.Time `json:"last_failure"`
 	Count        int       `json:"count"`
-	// OPRateLimit is set when the failure looked like 1Password itself
-	// throttled us. Triggers a much longer cooldown than a generic auth failure.
-	OPRateLimit bool `json:"op_rate_limit,omitempty"`
+	// SourceRateLimit is set when the failure looked like the upstream
+	// source itself throttled us (HTTP 429, "too many requests", etc.).
+	// Triggers a much longer cooldown than a generic auth failure.
+	// The json tag stays `op_rate_limit` for on-disk compatibility with
+	// files written by older vop versions.
+	SourceRateLimit bool `json:"op_rate_limit,omitempty"`
 	// Reason is a short human-readable summary of the last failure,
 	// shown in the cooldown message.
 	Reason string `json:"reason,omitempty"`
@@ -45,14 +49,14 @@ func CheckCooldown(profileName string) error {
 		return nil
 	}
 	rounded := remaining.Round(time.Second)
-	if rec.OPRateLimit {
+	if rec.SourceRateLimit {
 		return fmt.Errorf(
-			"1Password rate limit detected — wait %s before retrying to avoid extending the block. Run `vop unlock %s` to override",
+			"upstream rate limit detected — wait %s before retrying to avoid extending the block. Run `vop unlock %s` to override",
 			rounded, profileName,
 		)
 	}
 	return fmt.Errorf(
-		"recent auth failure for %s (%d attempts) — waiting %s before retry to avoid 1Password rate limiting. Run `vop unlock %s` to override",
+		"recent auth failure for %s (%d attempts) — waiting %s before retry to avoid triggering an upstream rate limit. Run `vop unlock %s` to override",
 		profileName, rec.Count, rounded, profileName,
 	)
 }
@@ -68,7 +72,7 @@ func RecordFailure(profileName string, err error) {
 	rec.LastFailure = now
 	rec.Count++
 	if IsRateLimitError(err) {
-		rec.OPRateLimit = true
+		rec.SourceRateLimit = true
 	}
 	if err != nil {
 		rec.Reason = truncate(err.Error(), 200)
@@ -89,11 +93,12 @@ func ClearFailures(profileName string) {
 // free (users mistype passwords, TOTP windows expire) — real
 // protection kicks in on the second+ attempt.
 //
-// 1Password-signalled rate limits use a fixed longer cooldown. 1P's
-// account-level throttle typically lasts ~10-15 minutes, so we wait
-// that long before letting the user try again.
+// Upstream-signalled rate limits use a fixed longer cooldown. 1P's
+// account-level throttle typically lasts ~10-15 minutes, and other
+// providers are usually in that ballpark, so we wait that long before
+// letting the user try again.
 func backoffFor(rec *FailureRecord) time.Duration {
-	if rec.OPRateLimit {
+	if rec.SourceRateLimit {
 		return 15 * time.Minute
 	}
 	switch {

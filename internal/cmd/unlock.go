@@ -15,9 +15,10 @@ func newUnlockCmd() *cobra.Command {
 		Long: `Clear the failure cooldown for a profile.
 
 vop tracks recent auth failures on disk and enforces a backoff
-before hitting 1Password again — this prevents rapid retries
-(e.g. from an out-of-sync MFA) from triggering 1Password's
-account-level rate limit.
+before hitting the upstream credential source again — this
+prevents rapid retries (e.g. from an out-of-sync MFA) from
+triggering a rate limit on 1Password, gpg-agent, or whichever
+source the profile is configured with.
 
 Use this command if you've verified the underlying problem is
 fixed (system clock synced, TOTP correct) and want to retry
