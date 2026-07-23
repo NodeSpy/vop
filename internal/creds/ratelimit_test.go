@@ -43,8 +43,8 @@ func TestBackoffFor(t *testing.T) {
 		{FailureRecord{Count: 4}, 30 * time.Second},
 		{FailureRecord{Count: 5}, 1 * time.Minute},
 		{FailureRecord{Count: 10}, 5 * time.Minute},
-		{FailureRecord{Count: 1, OPRateLimit: true}, 15 * time.Minute},
-		{FailureRecord{Count: 99, OPRateLimit: true}, 15 * time.Minute},
+		{FailureRecord{Count: 1, SourceRateLimit: true}, 15 * time.Minute},
+		{FailureRecord{Count: 99, SourceRateLimit: true}, 15 * time.Minute},
 	}
 	for _, tc := range cases {
 		if got := backoffFor(&tc.rec); got != tc.want {
@@ -93,7 +93,7 @@ func TestRecordFailure_RateLimitEnforcesLongCooldown(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected cooldown error immediately on rate limit")
 	}
-	// Should mention 1Password rate limit in the message.
+	// Should mention rate limit in the message (source-agnostic).
 	if !strings.Contains(err.Error(), "rate limit") {
 		t.Errorf("expected 'rate limit' in error, got: %v", err)
 	}

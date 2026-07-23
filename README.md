@@ -8,7 +8,7 @@ AWS credential management via 1Password. Spawn shells and run commands with AWS 
 - **Exec mode** to run single commands with credentials
 - **MFA support** with automatic TOTP retrieval from 1Password, or from any external command (`pass-otp`, `rbw`, `ykman`, KeePassXC, …)
 - **Flexible sources** — keys can come from a 1Password item or straight from `~/.aws/credentials`
-- **Rate-limit protection** — auth failures trigger a local cooldown so retries don't hammer 1Password
+- **Rate-limit protection** — auth failures trigger a local cooldown so retries don't hammer the upstream credential source (1Password, `pass`/gpg-agent, etc.)
 - **Key rotation** via `vop rotate`
 - **Dual backend** — each profile can independently use:
   - **CLI backend**: uses the `op` CLI binary (interactive auth, biometric)
@@ -416,7 +416,7 @@ The token is stored in `~/.config/vop/profiles.json` which is chmod 600 and shou
 | `vop test <profile>` | Test credentials with STS |
 | `vop cat` | Print profiles config (redacts tokens) |
 | `vop rotate [profile]` | Rotate IAM access keys (picker if no arg) |
-| `vop unlock <profile>` | Clear a profile's rate-limit cooldown after a failed auth |
+| `vop unlock <profile>` | Clear a profile's failure cooldown after a fixed auth issue |
 | `vop migrate [vault]` | Migrate from Vaulted |
 | `vop check` | Check prerequisites and configuration |
 | `vop version` | Print version information |

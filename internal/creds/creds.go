@@ -50,8 +50,9 @@ func CredFilePath(profileName string) string {
 // source profile (which must not itself be an assumed-role profile).
 func Fetch(profile *config.Profile, profileName string, opClient op.Client, cfg *config.Config, clientFor func(*config.Profile) (op.Client, error)) (*AWSCredentials, error) {
 	// Bail early if we're in a post-failure cooldown. This protects against
-	// rapid retries hammering 1Password after an MFA/TOTP mismatch or
-	// after 1P has already signalled a rate limit.
+	// rapid retries hammering the upstream credential source (1Password,
+	// pass/gpg-agent, etc.) after an MFA/TOTP mismatch or after the source
+	// has already signalled a rate limit.
 	if err := CheckCooldown(profileName); err != nil {
 		return nil, err
 	}
@@ -105,9 +106,10 @@ func Fetch(profile *config.Profile, profileName string, opClient op.Client, cfg 
 			serialNumber, totp,
 		)
 		if err != nil {
-			// MFA/TOTP mismatch is the classic trigger for 1P rate limiting:
-			// the user retries repeatedly and each retry fetches a fresh TOTP.
-			// Record the failure so subsequent runs hit the cooldown.
+			// MFA/TOTP mismatch is the classic trigger for source rate
+			// limiting: the user retries repeatedly and each retry fetches
+			// a fresh TOTP from 1P/pass/etc. Record the failure so
+			// subsequent runs hit the cooldown.
 			wrapped := fmt.Errorf("STS get-session-token failed (TOTP may have expired or system clock is out of sync): %w", err)
 			RecordFailure(profileName, wrapped)
 			return nil, wrapped
