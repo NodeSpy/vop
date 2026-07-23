@@ -59,8 +59,8 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot rotate keys for assumed-role profile %q: key rotation must be performed on the source profile (%q)", profileName, profile.SourceProfile)
 	}
 
-	if profile.UsesCredentialsCommand() {
-		return fmt.Errorf("cannot rotate keys for profile %q: base credentials come from `credentials_command` and vop can't write back to an arbitrary command. Rotate manually and update the source (e.g. `pass edit aws/prod`)", profileName)
+	if profile.UsesCredentialsCommand() && profile.CredentialsWriteCommand == "" {
+		return fmt.Errorf("cannot rotate keys for profile %q: `credentials_command` is set but `credentials_write_command` is not — vop can't write back without one.\n  For pass: add `\"credentials_write_command\": \"pass insert -m -f <entry>\"` to this profile.\n  Or rotate manually and update the source (e.g. `pass edit aws/prod`)", profileName)
 	}
 
 	client, err := getClientForProfile(profile)
@@ -85,7 +85,10 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 	ui.Info("Current access key: %s", oldAK)
 
 	storageLabel := "1Password"
-	if profile.UsesAWSCredentialsFile() {
+	switch {
+	case profile.CredentialsWriteCommand != "":
+		storageLabel = fmt.Sprintf("`%s`", profile.CredentialsWriteCommand)
+	case profile.UsesAWSCredentialsFile():
 		storageLabel = fmt.Sprintf("~/.aws/credentials [%s]", profile.AWSCredentialsProfile)
 	}
 

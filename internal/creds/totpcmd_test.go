@@ -1,6 +1,7 @@
 package creds
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -115,5 +116,38 @@ func TestRunCredentialsCommand_FailingCommand(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "credentials_command failed") {
 		t.Errorf("expected 'credentials_command failed' in error, got: %v", err)
+	}
+}
+
+func TestRunWriteCredentialsCommand_PipesStdin(t *testing.T) {
+	dir := t.TempDir()
+	sink := dir + "/received.txt"
+	// Command captures stdin to a file so we can assert on the exact bytes vop wrote.
+	if err := RunWriteCredentialsCommand("cat > "+sink, "NEW_AK", "NEW_SK"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, err := os.ReadFile(sink)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "NEW_AK\nNEW_SK\n"
+	if string(got) != want {
+		t.Errorf("stdin mismatch:\n got: %q\nwant: %q", string(got), want)
+	}
+}
+
+func TestRunWriteCredentialsCommand_EmptyErrors(t *testing.T) {
+	if err := RunWriteCredentialsCommand("", "AK", "SK"); err == nil {
+		t.Fatal("expected error for empty command")
+	}
+}
+
+func TestRunWriteCredentialsCommand_PropagatesFailure(t *testing.T) {
+	err := RunWriteCredentialsCommand("false", "AK", "SK")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "credentials_write_command failed") {
+		t.Errorf("expected 'credentials_write_command failed' in error, got: %v", err)
 	}
 }

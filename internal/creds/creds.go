@@ -209,9 +209,14 @@ func FetchBaseKeys(profile *config.Profile, opClient op.Client) (accessKey, secr
 }
 
 // WriteBaseKeys persists the new long-lived access key / secret for a
-// profile, sending them to either the AWS shared credentials file or the
-// configured 1Password item.
+// profile, sending them to whichever source the profile is configured
+// with: a write-back command, the AWS shared credentials file, or the
+// 1Password item.
 func WriteBaseKeys(profile *config.Profile, opClient op.Client, accessKey, secretKey string) error {
+	if profile.CredentialsWriteCommand != "" {
+		ui.Info("Writing new credentials via credentials_write_command")
+		return RunWriteCredentialsCommand(profile.CredentialsWriteCommand, accessKey, secretKey)
+	}
 	if profile.UsesAWSCredentialsFile() {
 		path := ResolveAWSCredentialsPath(profile.AWSCredentialsFile)
 		ui.Info("Writing new credentials to %s [%s]", path, profile.AWSCredentialsProfile)

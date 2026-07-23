@@ -40,6 +40,14 @@ type Profile struct {
 	// them in a small shell script.
 	CredentialsCommand string `json:"credentials_command,omitempty"`
 
+	// CredentialsWriteCommand, if set, is executed via `sh -c` on rotation
+	// with the new access key ID on line 1 and secret on line 2 written to
+	// its stdin. Enables `vop rotate` for command-sourced profiles.
+	//
+	// For `pass`: `pass insert -m -f aws/prod`. For any tool that doesn't
+	// natively accept the two-line format, wrap it in a shell script.
+	CredentialsWriteCommand string `json:"credentials_write_command,omitempty"`
+
 	// MFATOTPCommand, if set, is executed via `sh -c` and its trimmed stdout
 	// is used as the current TOTP code. Takes precedence over MFATOTPItem.
 	// Lets users delegate TOTP storage to any external tool: pass-otp, rbw,

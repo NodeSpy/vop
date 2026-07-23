@@ -217,6 +217,7 @@ Profiles are stored in `~/.config/vop/profiles.json` (chmod 600). This file is i
 | `aws_credentials_profile` | File source | Profile name in `~/.aws/credentials` to read/rotate keys against (see below) |
 | `aws_credentials_file` | No | Override path for the shared credentials file (defaults to `~/.aws/credentials`) |
 | `credentials_command` | Command source | Shell command whose stdout is the AWS keys (2-3 lines: access key, secret, optional session token) |
+| `credentials_write_command` | No | Shell command that receives new keys on stdin (line 1: access key, line 2: secret). Enables `vop rotate` for command sources. |
 | `mfa_totp_item` | No | 1Password item that holds the MFA TOTP |
 | `mfa_totp_command` | No | Shell command whose stdout is the current TOTP (see below) |
 | `mfa_serial` | No | Explicit MFA device ARN (overrides file/1P/IAM lookup) |
@@ -323,7 +324,22 @@ op read "op://Personal/AWS $1/secret access key"
 
 ##### Rotation
 
-`vop rotate` doesn't support `credentials_command` sources — vop can't write back to an arbitrary command. When your key ages out, rotate manually with the source tool (`pass edit aws/prod`) and vop picks up the new value on the next call.
+`vop rotate` works for command sources if you also configure `credentials_write_command` — a command that accepts the new keys on stdin (line 1: access key, line 2: secret) and updates the source. For pass:
+
+```json
+{
+  "prod": {
+    "credentials_command": "pass aws/prod",
+    "credentials_write_command": "pass insert -m -f aws/prod",
+    "mfa_totp_command": "pass otp aws/prod",
+    "mfa_serial": "arn:aws:iam::123456789012:mfa/daniel"
+  }
+}
+```
+
+Now `vop rotate prod` creates a new IAM key, pipes `aws_access_key_id\naws_secret_access_key\n` into `pass insert -m -f aws/prod` (which overwrites the entry), verifies via STS with the new key + a fresh TOTP, and deletes the old key. On any failure, vop rolls the pass entry back to the previous keys automatically.
+
+If `credentials_write_command` isn't set, `vop rotate` refuses cleanly and points you here.
 
 #### External TOTP command
 

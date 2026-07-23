@@ -114,3 +114,35 @@ func RunCredentialsCommand(command string) (accessKey, secretKey, sessionToken s
 	}
 	return accessKey, secretKey, sessionToken, nil
 }
+
+// RunWriteCredentialsCommand executes the configured write-back command
+// with the new access key on stdin line 1 and secret on stdin line 2.
+// Used by `vop rotate` to persist newly created keys into a command-based
+// source (e.g. `pass insert -m -f aws/prod`).
+//
+// The command receives exactly two lines followed by EOF. Tools that
+// expect a specific format (JSON, key=value, etc.) should be wrapped in
+// a small shell script.
+func RunWriteCredentialsCommand(command, accessKey, secretKey string) error {
+	if strings.TrimSpace(command) == "" {
+		return fmt.Errorf("credentials_write_command is empty")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd.Stdin = strings.NewReader(accessKey + "\n" + secretKey + "\n")
+	// Pass stderr through so unlock prompts / warnings reach the user.
+	cmd.Stderr = os.Stderr
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("credentials_write_command timed out after 30s: %s", command)
+		}
+		return fmt.Errorf("credentials_write_command failed: %w", err)
+	}
+	return nil
+}
