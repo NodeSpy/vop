@@ -1,6 +1,7 @@
 package creds
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -149,5 +150,57 @@ func TestRunWriteCredentialsCommand_PropagatesFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "credentials_write_command failed") {
 		t.Errorf("expected 'credentials_write_command failed' in error, got: %v", err)
+	}
+}
+
+func TestSourceCommandError_CapturesStderr(t *testing.T) {
+	_, err := RunTOTPCommand("echo 'gpg: decryption failed: No secret key' >&2; exit 2")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	var sce *SourceCommandError
+	if !errors.As(err, &sce) {
+		t.Fatalf("expected *SourceCommandError, got %T", err)
+	}
+	if !strings.Contains(sce.Stderr, "decryption failed") {
+		t.Errorf("stderr not captured, got %q", sce.Stderr)
+	}
+	// The rendered error must carry the diagnostic and the remedy —
+	// "exit status 2" alone tells the user nothing.
+	msg := err.Error()
+	for _, want := range []string{"mfa_totp_command", "decryption failed", "hint:"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error message missing %q:\n%s", want, msg)
+		}
+	}
+}
+
+func TestSourceCommandError_NoHintForOrdinaryFailure(t *testing.T) {
+	_, err := RunTOTPCommand("echo 'aws/prod: passfile not found.' >&2; exit 1")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	var sce *SourceCommandError
+	if !errors.As(err, &sce) {
+		t.Fatalf("expected *SourceCommandError, got %T", err)
+	}
+	if h := sce.Hint(); h != "" {
+		t.Errorf("expected no unlock hint for a missing entry, got %q", h)
+	}
+	if !strings.Contains(err.Error(), "passfile not found") {
+		t.Errorf("expected stderr in message, got:\n%s", err)
+	}
+}
+
+func TestRunCredentialsCommand_ErrorCarriesStderr(t *testing.T) {
+	_, _, _, err := RunCredentialsCommand("echo 'gpg-agent is not running' >&2; exit 2")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "gpg-agent is not running") {
+		t.Errorf("expected stderr in message, got:\n%s", err)
+	}
+	if !IsLockedSourceError(err) {
+		t.Error("expected a gpg-agent failure to classify as locked")
 	}
 }

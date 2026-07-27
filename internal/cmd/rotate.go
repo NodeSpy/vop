@@ -27,10 +27,9 @@ func cmdRotate(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	profileName := ""
-	if len(args) > 0 {
-		profileName = args[0]
-	}
+	resolved := profileOrDefault(args)
+	announceProfile(resolved)
+	profileName := resolved.Name
 
 	if profileName == "" {
 		names := c.ProfileNames()

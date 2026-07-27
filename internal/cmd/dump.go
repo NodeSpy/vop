@@ -30,14 +30,9 @@ func cmdDump(_ *cobra.Command, args []string) error {
 		format = args[1]
 	}
 
-	// If no profile given, try to detect from environment
+	// If no profile given, fall back to the session env or a .vop file.
 	if profile == "" {
-		credFile := os.Getenv("VOP_CRED_FILE")
-		if credFile != "" {
-			if _, err := os.Stat(credFile); err == nil {
-				profile = os.Getenv("VOP_PROFILE")
-			}
-		}
+		profile = defaultProfile().Name
 	}
 
 	if profile == "" {

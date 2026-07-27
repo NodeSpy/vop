@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -90,8 +91,37 @@ func Execute() {
 
 	if err := root.Execute(); err != nil {
 		ui.Error("%s", err)
-		os.Exit(1)
+		os.Exit(exitCodeFor(err))
 	}
+}
+
+// Exit codes. Anything automated (an agent, a script, CI) can use these to
+// tell "this will fix itself if you try again" apart from "stop retrying" —
+// blind retry loops against a locked credential store are exactly how a
+// profile ends up in a long rate-limit cooldown.
+const (
+	// ExitFailure is any error without a more specific classification.
+	ExitFailure = 1
+	// ExitCooldown means vop refused to try because the profile is inside
+	// its backoff window. Retrying before it elapses will just repeat this.
+	ExitCooldown = 11
+	// ExitLocked means the credential source is locked or could not prompt.
+	// Requires a human to unlock it; retrying changes nothing.
+	ExitLocked = 12
+)
+
+func exitCodeFor(err error) int {
+	var cooldown *creds.CooldownError
+	if errors.As(err, &cooldown) {
+		if cooldown.Kind == creds.KindLocked {
+			return ExitLocked
+		}
+		return ExitCooldown
+	}
+	if creds.IsLockedSourceError(err) {
+		return ExitLocked
+	}
+	return ExitFailure
 }
 
 func configFilePath() string {

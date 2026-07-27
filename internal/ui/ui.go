@@ -23,6 +23,27 @@ const (
 // Error output is never suppressed. Used by credential_process mode.
 var Quiet bool
 
+// IsInteractive reports whether stdin is a terminal, i.e. whether a
+// subprocess can realistically prompt the user (for a gpg passphrase,
+// a 1Password unlock, etc.). False when vop is driven by an agent,
+// a script, or a cron job.
+func IsInteractive() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	// Pipes and regular files fail the char-device test. /dev/null passes
+	// it but obviously can't answer a prompt, and it's the usual stdin for
+	// an agent or a daemon, so rule it out explicitly.
+	if fi.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	if devNull, err := os.Stat(os.DevNull); err == nil && os.SameFile(fi, devNull) {
+		return false
+	}
+	return true
+}
+
 func Info(msg string, args ...any) {
 	if Quiet {
 		return

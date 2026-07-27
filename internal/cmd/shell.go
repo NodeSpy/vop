@@ -46,10 +46,9 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	profileName := ""
-	if len(args) > 0 {
-		profileName = args[0]
-	}
+	resolved := profileOrDefault(args)
+	announceProfile(resolved)
+	profileName := resolved.Name
 
 	if profileName == "" {
 		names := c.ProfileNames()

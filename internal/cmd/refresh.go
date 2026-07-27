@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/NodeSpy/vop/internal/creds"
@@ -17,8 +16,10 @@ func newRefreshCmd() *cobra.Command {
 		ValidArgsFunction: completeProfiles,
 		Long: `Refresh AWS credentials for the active vop session.
 
-If no profile is specified, the current VOP_PROFILE is used.
-This re-fetches credentials from 1Password, performs MFA/STS if
+If no profile is specified, vop uses VOP_PROFILE (or
+AGENT_DECK_VOP_PROFILE), then a .vop file in this directory or an
+ancestor up to the repo root.
+This re-fetches credentials from the profile's source, performs MFA/STS if
 configured, and updates the tmpfs credential files.
 
 Any tool reading AWS_SHARED_CREDENTIALS_FILE will pick up the
@@ -29,16 +30,11 @@ new credentials automatically.`,
 }
 
 func cmdRefresh(_ *cobra.Command, args []string) error {
-	profileName := ""
-	if len(args) > 0 {
-		profileName = args[0]
+	resolved, err := requireDefaultProfile(args, "refresh")
+	if err != nil {
+		return err
 	}
-	if profileName == "" {
-		profileName = os.Getenv("VOP_PROFILE")
-	}
-	if profileName == "" {
-		return fmt.Errorf("not in a vop shell (VOP_PROFILE not set).\n  Specify a profile: vop refresh <profile>")
-	}
+	profileName := resolved.Name
 
 	c, err := loadConfig()
 	if err != nil {

@@ -9,6 +9,7 @@ AWS credential management via 1Password. Spawn shells and run commands with AWS 
 - **MFA support** with automatic TOTP retrieval from 1Password, or from any external command (`pass-otp`, `rbw`, `ykman`, KeePassXC, …)
 - **Flexible sources** — keys can come from a 1Password item or straight from `~/.aws/credentials`
 - **Rate-limit protection** — auth failures trigger a local cooldown so retries don't hammer the upstream credential source (1Password, `pass`/gpg-agent, etc.)
+- **Per-directory defaults** — a `.vop` file naming a profile lets you drop the profile argument inside a repo
 - **Key rotation** via `vop rotate`
 - **Dual backend** — each profile can independently use:
   - **CLI backend**: uses the `op` CLI binary (interactive auth, biometric)
@@ -229,6 +230,58 @@ Profiles are stored in `~/.config/vop/profiles.json` (chmod 600). This file is i
 | `role_session_name` | No | Session name passed to `sts:AssumeRole` (defaults to `vop`) |
 | `external_id` | No | ExternalId condition value for role assumption |
 
+### Default profile (`.vop` files)
+
+Commands that take a profile can find one on their own, so you don't have to
+name it every time. A `.vop` file holds a single profile name:
+
+```bash
+echo tap > ~/work/tap-infra/.vop
+```
+
+From anywhere in that repo, the profile is implied:
+
+```bash
+cd ~/work/tap-infra/modules/vpc
+vop exec -- terraform plan
+# >>> Profile: tap (from ~/work/tap-infra/.vop)
+```
+
+vop looks for `.vop` in the current directory and each parent, stopping at the
+repository root (a directory containing `.git`), `$HOME`, or the filesystem
+root. The nearest file wins, so a subdirectory can override the repo default.
+Blank lines and `#` comments are ignored; a file with no profile name in it
+means "no default here" and stops the search rather than inheriting a parent's.
+
+**Precedence**, highest first:
+
+1. An explicit argument — `vop exec tap -- …`
+2. `VOP_PROFILE` (exported by `vop shell`), then `AGENT_DECK_VOP_PROFILE`
+3. The nearest `.vop` file
+4. The interactive picker, for commands that have one
+
+The environment deliberately beats `.vop`. A `.vop` file is repository content,
+and letting repository content silently redirect credentials to a different AWS
+account would defeat the point of pinning a session to one profile. When a
+`.vop` file is passed over for that reason, vop says so:
+
+```
+!!! ~/work/tap-infra/.vop requests profile 'tap' — ignored, this session is
+    pinned to 'ednition' by AGENT_DECK_VOP_PROFILE
+```
+
+Since `.vop` is usually repo-specific, either commit it (it names a profile, not
+a secret) or add it to `.git/info/exclude`.
+
+For `vop exec`, the `--` separator is required when you omit the profile, so the
+two forms stay unambiguous:
+
+```bash
+vop exec tap -- aws s3 ls   # explicit profile
+vop exec -- aws s3 ls       # profile from env or .vop
+vop exec aws s3 ls          # 'aws' is read as the profile name — not what you want
+```
+
 ### Backend selection
 
 Each profile independently chooses its backend:
@@ -404,16 +457,16 @@ The token is stored in `~/.config/vop/profiles.json` which is chmod 600 and shou
 | `vop ls` | List configured profiles |
 | `vop shell [profile]` | Open a shell with AWS credentials (picker if no arg) |
 | `vop <profile>` | Shorthand for `vop shell <profile>` |
-| `vop exec <profile> [--] <cmd>` | Run a command with credentials |
+| `vop exec [profile] [--] <cmd>` | Run a command with credentials (profile from `.vop`/env if omitted) |
 | `vop refresh [profile]` | Refresh credentials in an active shell |
 | `vop cred-process <profile>` | Output credentials for AWS `credential_process` |
 | `vop agent [profile]` | Show credential paths for AI agents / external tools |
 | `vop add [profile]` | Add a new profile |
 | `vop edit <profile>` | Edit an existing profile |
 | `vop rm <profile>` | Remove a profile |
-| `vop show <profile>` | Show profile configuration |
+| `vop show [profile]` | Show profile configuration |
 | `vop dump [profile]` | Dump raw credentials |
-| `vop test <profile>` | Test credentials with STS |
+| `vop test [profile]` | Test the credential source and validate with STS |
 | `vop cat` | Print profiles config (redacts tokens) |
 | `vop rotate [profile]` | Rotate IAM access keys (picker if no arg) |
 | `vop unlock <profile>` | Clear a profile's failure cooldown after a fixed auth issue |
@@ -421,6 +474,30 @@ The token is stored in `~/.config/vop/profiles.json` which is chmod 600 and shou
 | `vop check` | Check prerequisites and configuration |
 | `vop version` | Print version information |
 | `vop update` | Update to the latest version |
+
+### Exit codes
+
+Useful when vop is driven by a script, CI job, or AI agent — a retry loop
+against a locked credential store is the fastest way to earn a cooldown.
+
+| Code | Meaning | Should you retry? |
+|---|---|---|
+| `0` | Success | — |
+| `1` | Generic failure | Maybe — read the error |
+| `11` | Profile is inside its failure cooldown | Not until the wait elapses |
+| `12` | Credential source is locked or couldn't prompt | No — a human must unlock it |
+
+A locked source (locked gpg-agent, 1Password not signed in, a pinentry prompt
+with no terminal to show it on) is reported separately from an auth failure:
+it never reached the upstream provider, so it doesn't escalate the
+rate-limit backoff, and the error names the command to run to unlock it.
+
+```
+>>> mfa_totp_command failed (exit status 2): pass otp aws/prod
+  gpg: decryption failed: No secret key
+  hint: the credential store looks locked. Run `pass otp aws/prod` in an
+  interactive terminal to unlock it, then retry
+```
 
 ## Migrating from Vaulted
 

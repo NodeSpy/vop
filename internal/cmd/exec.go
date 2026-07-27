@@ -12,9 +12,9 @@ import (
 
 func newExecCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:                "exec <profile> <command...>",
+		Use:                "exec [profile] <command...>",
 		Short:              "Run command with credentials",
-		Args:               cobra.MinimumNArgs(2),
+		Args:               cobra.MinimumNArgs(1),
 		DisableFlagParsing: true,
 		RunE:               cmdExec,
 		ValidArgsFunction:  completeProfiles,
@@ -33,8 +33,8 @@ func cmdExec(_ *cobra.Command, args []string) error {
 	}
 	args = filtered
 
-	if len(args) < 2 {
-		return fmt.Errorf("usage: vop exec [-q] <profile> [--] <command...>")
+	if len(args) < 1 {
+		return fmt.Errorf("usage: vop exec [-q] [profile] [--] <command...>")
 	}
 
 	c, err := loadConfig()
@@ -42,13 +42,28 @@ func cmdExec(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	profileName := args[0]
-	cmdArgs := args[1:]
-
-	// Strip leading "--" separator if present (e.g. vop exec profile -- cmd).
-	if len(cmdArgs) > 0 && cmdArgs[0] == "--" {
-		cmdArgs = cmdArgs[1:]
+	// A leading "--" means the profile was omitted: everything after it is
+	// the command, and the profile comes from the environment or a .vop
+	// file. Requiring the separator keeps this unambiguous — without it,
+	// `vop exec foo` would be impossible to read as either form.
+	var profileName string
+	var cmdArgs []string
+	if args[0] == "--" {
+		cmdArgs = args[1:]
+		resolved, err := requireDefaultProfile(nil, "exec")
+		if err != nil {
+			return err
+		}
+		profileName = resolved.Name
+	} else {
+		profileName = args[0]
+		cmdArgs = args[1:]
+		// Strip the separator in the explicit form (vop exec profile -- cmd).
+		if len(cmdArgs) > 0 && cmdArgs[0] == "--" {
+			cmdArgs = cmdArgs[1:]
+		}
 	}
+
 	if len(cmdArgs) == 0 {
 		return fmt.Errorf("no command specified")
 	}

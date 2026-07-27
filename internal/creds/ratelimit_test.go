@@ -131,3 +131,109 @@ func TestCooldownExpires(t *testing.T) {
 	}
 }
 
+func TestIsLockedSourceError(t *testing.T) {
+	locked := []error{
+		errors.New("gpg: decryption failed: No secret key"),
+		errors.New("gpg-agent: no pinentry"),
+		errors.New("Inappropriate ioctl for device"),
+		errors.New("you are not currently signed in"),
+		&SourceCommandError{Stderr: "gpg: decryption failed", Err: errors.New("exit status 2")},
+		&SourceCommandError{TimedOut: true},
+		fmt.Errorf("fetching TOTP: %w", &SourceCommandError{Stderr: "gpg-agent unavailable"}),
+	}
+	for _, err := range locked {
+		if !IsLockedSourceError(err) {
+			t.Errorf("expected locked classification for: %v", err)
+		}
+	}
+
+	notLocked := []error{
+		nil,
+		errors.New("HTTP 429: rate limit exceeded"),
+		errors.New("the security token included in the request is invalid"),
+		// The cooldown message names `vop unlock` — it must not be
+		// mistaken for a locked source and re-recorded as one.
+		&CooldownError{Profile: "p", Kind: KindAuth, Count: 3},
+		// A missing entry is a config error, not a locked store: it needs
+		// a config fix, and the generic backoff is the right response.
+		&SourceCommandError{Stderr: "aws/prod: passfile not found."},
+	}
+	for _, err := range notLocked {
+		if IsLockedSourceError(err) {
+			t.Errorf("expected non-locked classification for: %v", err)
+		}
+	}
+}
+
+func TestRecordFailure_LockedDoesNotEscalateUpstreamBackoff(t *testing.T) {
+	isolateRuntimeDir(t)
+	lockErr := &SourceCommandError{Stderr: "gpg: decryption failed: No secret key"}
+	for range 8 {
+		RecordFailure("p", lockErr)
+	}
+
+	rec := loadFailure("p")
+	if rec.Kind != KindLocked {
+		t.Fatalf("kind = %q, want %q", rec.Kind, KindLocked)
+	}
+	if rec.Count != 0 {
+		t.Errorf("locked failures must not increment the upstream counter, Count = %d", rec.Count)
+	}
+	if got := backoffFor(rec); got != 20*time.Second {
+		t.Errorf("backoff = %v, want the flat locked cooldown of 20s", got)
+	}
+}
+
+func TestRecordFailure_LockedFirstIsFree(t *testing.T) {
+	isolateRuntimeDir(t)
+	RecordFailure("p", &SourceCommandError{Stderr: "gpg: decryption failed"})
+	if err := CheckCooldown("p"); err != nil {
+		t.Fatalf("first locked failure should not gate a retry, got %v", err)
+	}
+	RecordFailure("p", &SourceCommandError{Stderr: "gpg: decryption failed"})
+	if err := CheckCooldown("p"); err == nil {
+		t.Fatal("expected a cooldown after the second locked failure")
+	}
+}
+
+func TestCooldownError_ReportsCauseAndRemedy(t *testing.T) {
+	isolateRuntimeDir(t)
+	lockErr := &SourceCommandError{
+		Label:   "mfa_totp_command",
+		Command: "pass otp aws/prod",
+		Stderr:  "gpg: decryption failed: No secret key",
+		Err:     errors.New("exit status 2"),
+	}
+	RecordFailure("p", lockErr)
+	RecordFailure("p", lockErr)
+
+	err := CheckCooldown("p")
+	if err == nil {
+		t.Fatal("expected a cooldown error")
+	}
+	var ce *CooldownError
+	if !errors.As(err, &ce) {
+		t.Fatalf("expected *CooldownError, got %T", err)
+	}
+	if ce.Kind != KindLocked {
+		t.Errorf("kind = %q, want %q", ce.Kind, KindLocked)
+	}
+	// The whole point: the message has to name the real cause, not just
+	// "recent auth failure", or the caller keeps retrying blindly.
+	for _, want := range []string{"locked", "gpg: decryption failed", "pass otp aws/prod", "vop unlock p"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("cooldown message missing %q:\n%s", want, err)
+		}
+	}
+}
+
+func TestLegacyRateLimitRecordStillClassified(t *testing.T) {
+	// Records written before Kind existed only set op_rate_limit.
+	rec := &FailureRecord{SourceRateLimit: true, Count: 1}
+	if rec.kind() != KindRateLimit {
+		t.Errorf("kind = %q, want %q", rec.kind(), KindRateLimit)
+	}
+	if got := backoffFor(rec); got != 15*time.Minute {
+		t.Errorf("backoff = %v, want 15m", got)
+	}
+}

@@ -30,16 +30,11 @@ given profile.`,
 }
 
 func cmdAgent(_ *cobra.Command, args []string) error {
-	profileName := ""
-	if len(args) > 0 {
-		profileName = args[0]
+	resolved, err := requireDefaultProfile(args, "agent")
+	if err != nil {
+		return err
 	}
-	if profileName == "" {
-		profileName = os.Getenv("VOP_PROFILE")
-	}
-	if profileName == "" {
-		return fmt.Errorf("not in a vop shell (VOP_PROFILE not set).\n  Specify a profile: vop agent <profile>")
-	}
+	profileName := resolved.Name
 
 	// Load profile config for agent policy.
 	c, err := loadConfig()

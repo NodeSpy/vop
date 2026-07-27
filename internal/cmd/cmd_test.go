@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/NodeSpy/vop/internal/config"
+	"github.com/NodeSpy/vop/internal/creds"
 	"github.com/NodeSpy/vop/internal/op"
 )
 
@@ -358,5 +361,28 @@ func TestCmdLs_Empty(t *testing.T) {
 	err := cmdLs(nil, nil)
 	if err != nil {
 		t.Fatalf("cmdLs with empty config failed: %v", err)
+	}
+}
+
+func TestExitCodeFor(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"nil-ish generic error", errors.New("boom"), ExitFailure},
+		{"locked source", errors.New("gpg: decryption failed: No secret key"), ExitLocked},
+		{"wrapped locked source", fmt.Errorf("fetching TOTP: %w",
+			&creds.SourceCommandError{Stderr: "gpg-agent unavailable"}), ExitLocked},
+		{"auth cooldown", &creds.CooldownError{Profile: "p", Kind: creds.KindAuth}, ExitCooldown},
+		{"rate-limit cooldown", &creds.CooldownError{Profile: "p", Kind: creds.KindRateLimit}, ExitCooldown},
+		{"locked cooldown", &creds.CooldownError{Profile: "p", Kind: creds.KindLocked}, ExitLocked},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := exitCodeFor(tc.err); got != tc.want {
+				t.Errorf("exitCodeFor(%v) = %d, want %d", tc.err, got, tc.want)
+			}
+		})
 	}
 }

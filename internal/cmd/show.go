@@ -11,19 +11,24 @@ import (
 
 func newShowCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:               "show <profile>",
+		Use:               "show [profile]",
 		Short:             "Show profile details",
-		Args:              cobra.ExactArgs(1),
+		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeProfiles,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := loadConfig()
 			if err != nil {
 				return err
 			}
-			if _, err := requireProfile(c, args[0]); err != nil {
+			resolved, err := requireDefaultProfile(args, "show")
+			if err != nil {
 				return err
 			}
-			return showProfile(c, args[0])
+			name, _, err := resolveProfile(c, resolved.Name)
+			if err != nil {
+				return err
+			}
+			return showProfile(c, name)
 		},
 	}
 }
