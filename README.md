@@ -186,6 +186,9 @@ vop exec prod aws s3 ls
 # or with -- separator:
 vop exec prod -- aws s3 ls
 
+# vop's own messages go to stderr, so the command's stdout stays parseable
+vop exec prod -- aws ec2 describe-instances --output json | jq .
+
 # Test credentials
 vop test prod
 
@@ -305,6 +308,25 @@ vop exec tap -- aws s3 ls   # explicit profile
 vop exec -- aws s3 ls       # profile from env or .vop
 vop exec aws s3 ls          # 'aws' is read as the profile name — not what you want
 ```
+
+#### Carrying the resolved profile elsewhere
+
+`.vop` resolution depends on where you're standing, so a script or agent that
+runs one command in a repo and the next one in `/tmp` loses the profile. `vop
+profile` prints what resolves here — the bare name on stdout, its origin on
+stderr — so you can pin it once and stop depending on the directory:
+
+```bash
+$ vop profile
+>>> Profile: ednition (from ~/Projects/ednition/.vop)   # stderr
+ednition                                                # stdout
+
+export VOP_PROFILE=$(vop profile -q)   # pin for the rest of the session
+eval "$(vop profile --export)"         # same thing, in one step
+```
+
+It exits non-zero when nothing resolves, so `$(vop profile)` fails loudly
+instead of quietly expanding to an empty profile.
 
 ### Backend selection
 
@@ -482,6 +504,7 @@ The token is stored in `~/.config/vop/profiles.json` which is chmod 600 and shou
 | `vop shell [profile]` | Open a shell with AWS credentials (picker if no arg) |
 | `vop <profile>` | Shorthand for `vop shell <profile>` |
 | `vop exec [profile] [--] <cmd>` | Run a command with credentials (profile from `.vop`/env if omitted) |
+| `vop profile` | Print the profile that resolves here (name on stdout, origin on stderr) |
 | `vop refresh [profile]` | Refresh credentials in an active shell |
 | `vop cred-process <profile>` | Output credentials for AWS `credential_process` |
 | `vop agent [profile]` | Show credential paths for AI agents / external tools |

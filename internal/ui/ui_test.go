@@ -45,7 +45,7 @@ func captureStderr(t *testing.T, fn func()) string {
 }
 
 func TestInfo(t *testing.T) {
-	out := captureStdout(t, func() {
+	out := captureStderr(t, func() {
 		Info("hello %s", "world")
 	})
 	if !strings.Contains(out, ">>>") {
@@ -81,7 +81,7 @@ func TestError(t *testing.T) {
 }
 
 func TestSuccess(t *testing.T) {
-	out := captureStdout(t, func() {
+	out := captureStderr(t, func() {
 		Success("done %s", "ok")
 	})
 	if !strings.Contains(out, "ok") {

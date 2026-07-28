@@ -43,6 +43,7 @@ func NewRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/vop/profiles.json)")
 
 	root.AddCommand(newLsCmd())
+	root.AddCommand(newProfileCmd())
 	root.AddCommand(newShellCmd())
 	root.AddCommand(newExecCmd())
 	root.AddCommand(newAddCmd())

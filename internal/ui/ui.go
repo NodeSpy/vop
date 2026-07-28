@@ -44,11 +44,15 @@ func IsInteractive() bool {
 	return true
 }
 
+// Info, Warn, Success and Error all write to stderr. Diagnostics must never
+// land on stdout: `vop exec … -- aws … --output json` pipes the child's stdout
+// straight through, and a ">>> Profile: …" banner in front of the JSON breaks
+// every parser downstream.
 func Info(msg string, args ...any) {
 	if Quiet {
 		return
 	}
-	fmt.Printf(Green+">>>"+Reset+" "+msg+"\n", args...)
+	fmt.Fprintf(os.Stderr, Green+">>>"+Reset+" "+msg+"\n", args...)
 }
 
 func Warn(msg string, args ...any) {
@@ -66,7 +70,7 @@ func Success(msg string, args ...any) {
 	if Quiet {
 		return
 	}
-	fmt.Printf(Green+" ok"+Reset+" "+msg+"\n", args...)
+	fmt.Fprintf(os.Stderr, Green+" ok"+Reset+" "+msg+"\n", args...)
 }
 
 func Fatal(msg string, args ...any) {

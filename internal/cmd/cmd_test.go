@@ -55,7 +55,7 @@ func TestNewRootCmd_HasAllSubcommands(t *testing.T) {
 	expected := []string{
 		"ls", "shell", "exec", "add", "edit", "rm",
 		"show", "dump", "rotate", "test", "migrate", "check",
-		"version", "refresh", "cred-process", "agent", "cat",
+		"version", "refresh", "cred-process", "agent", "cat", "profile",
 	}
 
 	commands := make(map[string]bool)
