@@ -4,32 +4,43 @@
 class Vop < Formula
   desc "AWS credential management via 1Password"
   homepage "https://github.com/NodeSpy/vop"
-  version "v0.7.0"
+  version "v0.8.0"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/NodeSpy/vop/releases/download/v0.7.0/vop-darwin-arm64"
-      sha256 "f1c7823cd5f82138da911f2caebfa13fa32f798b37b325bb1a4174b2db74ebe3"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.8.0/vop-darwin-arm64"
+      sha256 "a8edc935e48ad778927d56f3b1ddce87e5ff1326d6a98303c4f3cdf8c9cb2811"
     else
-      url "https://github.com/NodeSpy/vop/releases/download/v0.7.0/vop-darwin-amd64"
-      sha256 "3f5e65edc83115d6514063898059fc43741b9487b9b8a60e5ff15841a7403730"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.8.0/vop-darwin-amd64"
+      sha256 "b0f455cfe2638b5969cc54311ce3b7481b1e55fe92164e3e7833d862531c2e7e"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/NodeSpy/vop/releases/download/v0.7.0/vop-linux-arm64"
-      sha256 "89094eb7677a3263aa96aab18ffe7602ea3edd0a75aaf219a090ee85b361256b"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.8.0/vop-linux-arm64"
+      sha256 "c84faa6f1953d9ec2ecd3dfaa28d2302a2ad83b02e951624a7915e09fe9641a1"
     else
-      url "https://github.com/NodeSpy/vop/releases/download/v0.7.0/vop-linux-amd64"
-      sha256 "13c22831e5779aea9dbead652dc7fdf9aa4a87816ed87dc604fd3aadb1f52939"
+      url "https://github.com/NodeSpy/vop/releases/download/v0.8.0/vop-linux-amd64"
+      sha256 "91b4b76a3e6c15df03574fa7c3c36ce53e8ff1a628fc62300dc72c81bad56648"
     end
   end
 
   def install
     binary = Dir["vop-*"].first || "vop"
     bin.install binary => "vop"
+  end
+
+  def caveats
+    <<~EOS
+      To let AI agents use vop for AWS credentials, install the vop skill:
+        vop skill install
+
+      It writes a short pointer to ~/.claude/skills/vop/SKILL.md. The full
+      instructions are printed by 'vop skill' straight from the binary, so
+      they track upgrades and the stub never needs reinstalling.
+    EOS
   end
 
   test do
