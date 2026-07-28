@@ -44,6 +44,7 @@ func NewRootCmd() *cobra.Command {
 
 	root.AddCommand(newLsCmd())
 	root.AddCommand(newProfileCmd())
+	root.AddCommand(newSkillCmd())
 	root.AddCommand(newShellCmd())
 	root.AddCommand(newExecCmd())
 	root.AddCommand(newAddCmd())

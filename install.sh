@@ -706,6 +706,7 @@ main() {
 		esac
 
 		info "Run 'vop check' to verify your setup."
+		info "Run 'vop skill install' so AI agents know to use vop for AWS credentials."
 		return
 	elif [ "${#method_array[@]}" -gt 1 ]; then
 		if [ -t 0 ] || [ -e /dev/tty ]; then
@@ -731,6 +732,7 @@ main() {
 	esac
 
 	info "Run 'vop check' to verify your setup."
+	info "Run 'vop skill install' so AI agents know to use vop for AWS credentials."
 }
 
 main "$@"

@@ -516,6 +516,8 @@ The token is stored in `~/.config/vop/profiles.json` which is chmod 600 and shou
 | `vop rotate [profile]` | Rotate IAM access keys (picker if no arg) |
 | `vop unlock <profile>` | Clear a profile's failure cooldown after a fixed auth issue |
 | `vop migrate [vault]` | Migrate from Vaulted |
+| `vop skill` | Print the AI-agent instructions for this vop version |
+| `vop skill install` | Install the agent skill stub (`~/.claude/skills/vop/`) |
 | `vop check` | Check prerequisites and configuration |
 | `vop version` | Print version information |
 | `vop update` | Update to the latest version |
@@ -543,6 +545,45 @@ rate-limit backoff, and the error names the command to run to unlock it.
   hint: the credential store looks locked. Run `pass otp aws/prod` in an
   interactive terminal to unlock it, then retry
 ```
+
+## AI agents
+
+vop carries its own agent instructions. `vop skill` prints them — how profiles
+resolve, how to run commands, the safety policy, what each exit code means — and
+because the text lives in the binary, it always describes the vop that's actually
+installed. It also names the profile resolved in the current directory, so an
+agent doesn't have to work that out:
+
+```bash
+$ vop skill | head -15
+# vop — AWS credentials via 1Password
+
+vop v0.8.0. These are the authoritative instructions for this installed
+version...
+
+## Which profile
+
+Resolved in this directory: **`ednition` (from ~/Projects/ednition/.vop)**
+```
+
+To make an agent aware of vop in the first place, install the skill stub:
+
+```bash
+vop skill install              # ~/.claude/skills/vop/SKILL.md
+vop skill install --project    # ./.claude/skills/vop/SKILL.md
+vop skill install --dir <path> # anywhere else
+vop skill status               # missing | current | outdated | unmanaged
+```
+
+The stub is deliberately tiny: it states the non-negotiables (credentials come
+from vop, `--` is required, stop on exit 11/12, ask before mutating anything)
+and tells the agent to run `vop skill` for the rest. That's the whole point —
+**the file on disk carries no version-specific detail, so upgrading vop never
+leaves a stale skill behind.** Nothing to re-sync, and `vop skill install` only
+needs re-running if the stub itself changes (`vop check` says when).
+
+Installing refuses to overwrite a `SKILL.md` vop didn't write, so a hand-rolled
+skill is safe; pass `--force` to replace it.
 
 ## Migrating from Vaulted
 

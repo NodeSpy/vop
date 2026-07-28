@@ -3,8 +3,10 @@ package cmd
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/NodeSpy/vop/internal/config"
+	"github.com/NodeSpy/vop/internal/skill"
 	"github.com/NodeSpy/vop/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -73,6 +75,8 @@ func cmdCheck(_ *cobra.Command, _ []string) error {
 		}
 	}
 
+	reportSkillState()
+
 	if opMissing && hasCLIProfiles {
 		ui.Error("op CLI is required for CLI-backend profiles — see above.")
 	} else {
@@ -80,4 +84,31 @@ func cmdCheck(_ *cobra.Command, _ []string) error {
 	}
 	fmt.Println()
 	return nil
+}
+
+// reportSkillState tells the user whether AI agents on this machine know how to
+// use vop. `vop check` is the one command every install path points at, so this
+// is where the skill becomes discoverable regardless of how vop was installed.
+func reportSkillState() {
+	fmt.Printf("%s  Agent skill%s\n\n", ui.Bold, ui.Reset)
+
+	target, err := skillTargetDir(false, "")
+	if err != nil {
+		ui.Warn("Cannot locate the agent skills directory: %s", err)
+		fmt.Println()
+		return
+	}
+	path := filepath.Join(target, skill.InstalledName)
+	state, hint := skillState(path)
+
+	switch state {
+	case "current":
+		ui.Success("Installed: %s", displayPath(path))
+	default:
+		ui.Warn("%s: %s", state, displayPath(path))
+	}
+	if hint != "" {
+		ui.Info("%s", hint)
+	}
+	fmt.Println()
 }

@@ -222,6 +222,17 @@ jobs:
               bin.install binary => "vop"
             end
 
+            def caveats
+              <<~EOS
+                To let AI agents use vop for AWS credentials, install the vop skill:
+                  vop skill install
+
+                It writes a short pointer to ~/.claude/skills/vop/SKILL.md. The full
+                instructions are printed by 'vop skill' straight from the binary, so
+                they track upgrades and the stub never needs reinstalling.
+              EOS
+            end
+
             test do
               assert_match version.to_s, shell_output("#{bin}/vop version")
             end
