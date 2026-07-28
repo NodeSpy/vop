@@ -47,10 +47,11 @@ func (r resolvedProfile) Describe() string {
 //  1. VOP_PROFILE / AGENT_DECK_VOP_PROFILE
 //  2. a .vop file in the current directory or an ancestor
 //
-// The environment deliberately wins. A .vop file is repository content, and
-// letting repository content silently redirect credentials to a different
-// AWS account would defeat the point of pinning a session to a profile. When
-// a .vop file is passed over for that reason, the user is told.
+// The environment deliberately wins. A .vop file is a property of wherever you
+// happen to be standing — often checked in, often written for a whole tree of
+// repos — and letting it silently redirect credentials to a different AWS
+// account would defeat the point of pinning a session to a profile. When a
+// .vop file is passed over for that reason, the user is told.
 //
 // Returns an empty Name when nothing is configured; callers fall back to
 // their own behaviour (an interactive picker, or an error).
@@ -124,7 +125,7 @@ func requireDefaultProfile(args []string, cmdName string) (resolvedProfile, erro
 	if r.Name == "" {
 		return r, fmt.Errorf("no profile specified and no default found.\n"+
 			"  Name one: vop %s <profile>\n"+
-			"  Or create a %s file containing the profile name in this directory or the repo root",
+			"  Or create a %s file containing the profile name in this directory or any parent",
 			cmdName, config.DirProfileFilename)
 	}
 	announceProfile(r)

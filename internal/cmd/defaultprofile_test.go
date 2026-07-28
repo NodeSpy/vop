@@ -22,6 +22,9 @@ func chdirWithDirProfile(t *testing.T, content string) string {
 			t.Fatal(err)
 		}
 	}
+	// The search now climbs past repo roots, so pin $HOME to the temp repo to
+	// keep it from reaching a real .vop somewhere above the test tree.
+	t.Setenv("HOME", dir)
 	t.Chdir(dir)
 	return dir
 }

@@ -25,6 +25,13 @@ func markRepoRoot(t *testing.T, dir string) {
 	}
 }
 
+// boundWalkAtHome pins $HOME to dir so the upward search stops there instead
+// of climbing out of the test's temp tree into the real filesystem.
+func boundWalkAtHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+}
+
 func TestFindDirProfile_InCurrentDir(t *testing.T) {
 	dir := t.TempDir()
 	writeDirProfile(t, dir, "tap\n")
@@ -76,9 +83,10 @@ func TestFindDirProfile_NearestWins(t *testing.T) {
 	}
 }
 
-func TestFindDirProfile_StopsAtRepoRoot(t *testing.T) {
+func TestFindDirProfile_CrossesRepoRoot(t *testing.T) {
+	// One .vop above a directory of checkouts — e.g. ~/Projects/acme/.vop —
+	// supplies the default for every repo beneath it.
 	outer := t.TempDir()
-	// A .vop above the repo root must not leak into the repo.
 	writeDirProfile(t, outer, "tap")
 	repo := filepath.Join(outer, "repo")
 	markRepoRoot(t, repo)
@@ -91,13 +99,14 @@ func TestFindDirProfile_StopsAtRepoRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != nil {
-		t.Fatalf("search escaped the repo root: got %+v", got)
+	if got == nil || got.Name != "tap" {
+		t.Fatalf("got %+v, want 'tap' inherited from above the repo root", got)
 	}
 }
 
-func TestFindDirProfile_GitFileMarksRoot(t *testing.T) {
-	// Worktrees and submodules have .git as a file, not a directory.
+func TestFindDirProfile_CrossesWorktreeRoot(t *testing.T) {
+	// Worktrees and submodules have .git as a file rather than a directory;
+	// neither form blocks the search.
 	outer := t.TempDir()
 	writeDirProfile(t, outer, "tap")
 	repo := filepath.Join(outer, "worktree")
@@ -112,13 +121,75 @@ func TestFindDirProfile_GitFileMarksRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if got == nil || got.Name != "tap" {
+		t.Fatalf("got %+v, want 'tap' inherited into the worktree", got)
+	}
+}
+
+func TestFindDirProfile_EmptyFileAtRepoRootOptsOut(t *testing.T) {
+	// The documented shield: an empty .vop at a repo root keeps an ancestor's
+	// default from reaching into that one repo.
+	outer := t.TempDir()
+	writeDirProfile(t, outer, "tap")
+	repo := filepath.Join(outer, "repo")
+	markRepoRoot(t, repo)
+	writeDirProfile(t, repo, "# this repo has no default\n")
+	deep := filepath.Join(repo, "a", "b")
+	if err := os.MkdirAll(deep, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := FindDirProfile(deep)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got != nil {
-		t.Fatalf("search escaped a worktree root: got %+v", got)
+		t.Fatalf("got %+v, want nil — the empty marker should shield the repo", got)
+	}
+}
+
+func TestFindDirProfile_StopsAtHome(t *testing.T) {
+	outer := t.TempDir()
+	writeDirProfile(t, outer, "tap")
+	home := filepath.Join(outer, "home")
+	boundWalkAtHome(t, home)
+	deep := filepath.Join(home, "Projects", "repo")
+	if err := os.MkdirAll(deep, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := FindDirProfile(deep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("search escaped $HOME: got %+v", got)
+	}
+}
+
+func TestFindDirProfile_HonoursFileInHome(t *testing.T) {
+	// $HOME is examined before the boundary applies, so ~/.vop works as a
+	// personal fallback.
+	home := t.TempDir()
+	boundWalkAtHome(t, home)
+	writeDirProfile(t, home, "tap")
+	deep := filepath.Join(home, "Projects", "repo")
+	if err := os.MkdirAll(deep, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := FindDirProfile(deep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Name != "tap" {
+		t.Fatalf("got %+v, want 'tap' from ~/.vop", got)
 	}
 }
 
 func TestFindDirProfile_NoneFound(t *testing.T) {
 	dir := t.TempDir()
+	boundWalkAtHome(t, dir)
 	markRepoRoot(t, dir)
 	got, err := FindDirProfile(dir)
 	if err != nil {
@@ -172,6 +243,7 @@ func TestFindDirProfile_RejectsMalformedName(t *testing.T) {
 
 func TestFindDirProfile_IgnoresDirectoryNamedDotVop(t *testing.T) {
 	root := t.TempDir()
+	boundWalkAtHome(t, root)
 	markRepoRoot(t, root)
 	if err := os.MkdirAll(filepath.Join(root, DirProfileFilename), 0755); err != nil {
 		t.Fatal(err)

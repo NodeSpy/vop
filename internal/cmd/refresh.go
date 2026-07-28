@@ -17,8 +17,8 @@ func newRefreshCmd() *cobra.Command {
 		Long: `Refresh AWS credentials for the active vop session.
 
 If no profile is specified, vop uses VOP_PROFILE (or
-AGENT_DECK_VOP_PROFILE), then a .vop file in this directory or an
-ancestor up to the repo root.
+AGENT_DECK_VOP_PROFILE), then the nearest .vop file in this
+directory or an ancestor.
 This re-fetches credentials from the profile's source, performs MFA/STS if
 configured, and updates the tmpfs credential files.
 

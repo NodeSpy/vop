@@ -30,12 +30,14 @@ type DirProfile struct {
 }
 
 // FindDirProfile walks up from startDir looking for a .vop file, returning
-// the first one found. Nil (with no error) means there isn't one.
+// the nearest one found. Nil (with no error) means there isn't one.
 //
-// The search stops after examining the repository root (a directory
-// containing .git), $HOME, or the filesystem root — whichever comes first.
-// That keeps a single .vop at the top of a repo covering every subdirectory
-// without letting the search wander into unrelated parts of the filesystem.
+// The search stops after examining $HOME or the filesystem root — whichever
+// comes first. Repository roots are deliberately not boundaries: a .vop above
+// a checkout is the user's own directory layout, not repository content, so a
+// single file at ~/Projects/acme can supply the default for every repo beneath
+// it. Files inside a checkout still take precedence, since the nearest one
+// wins, and an empty .vop at a repo root opts that repo out of inheriting.
 func FindDirProfile(startDir string) (*DirProfile, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
@@ -58,11 +60,8 @@ func FindDirProfile(startDir string) (*DirProfile, error) {
 			return nil, nil
 		}
 
-		// Boundaries, checked after the directory itself so a .vop at the
-		// repo root (or in $HOME) is still honoured.
-		if isRepoRoot(dir) {
-			return nil, nil
-		}
+		// Boundaries, checked after the directory itself so a .vop in $HOME
+		// is still honoured.
 		if home != "" && dir == home {
 			return nil, nil
 		}
@@ -73,13 +72,6 @@ func FindDirProfile(startDir string) (*DirProfile, error) {
 		dir = parent
 	}
 	return nil, nil
-}
-
-func isRepoRoot(dir string) bool {
-	// .git is a directory in a normal clone and a file in a worktree or
-	// submodule; both mark a root.
-	_, err := os.Lstat(filepath.Join(dir, ".git"))
-	return err == nil
 }
 
 // readDirProfile returns the profile name declared in a .vop file: the first

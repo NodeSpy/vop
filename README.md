@@ -9,7 +9,7 @@ AWS credential management via 1Password. Spawn shells and run commands with AWS 
 - **MFA support** with automatic TOTP retrieval from 1Password, or from any external command (`pass-otp`, `rbw`, `ykman`, KeePassXC, …)
 - **Flexible sources** — keys can come from a 1Password item or straight from `~/.aws/credentials`
 - **Rate-limit protection** — auth failures trigger a local cooldown so retries don't hammer the upstream credential source (1Password, `pass`/gpg-agent, etc.)
-- **Per-directory defaults** — a `.vop` file naming a profile lets you drop the profile argument inside a repo
+- **Per-directory defaults** — a `.vop` file naming a profile lets you drop the profile argument inside a repo, or across a whole tree of them
 - **Key rotation** via `vop rotate`
 - **Dual backend** — each profile can independently use:
   - **CLI backend**: uses the `op` CLI binary (interactive auth, biometric)
@@ -247,21 +247,44 @@ vop exec -- terraform plan
 # >>> Profile: tap (from ~/work/tap-infra/.vop)
 ```
 
-vop looks for `.vop` in the current directory and each parent, stopping at the
-repository root (a directory containing `.git`), `$HOME`, or the filesystem
-root. The nearest file wins, so a subdirectory can override the repo default.
-Blank lines and `#` comments are ignored; a file with no profile name in it
-means "no default here" and stops the search rather than inheriting a parent's.
+vop looks for `.vop` in the current directory and each parent, stopping at
+`$HOME` or the filesystem root. The nearest file wins, so a subdirectory can
+override the default a parent set. Blank lines and `#` comments are ignored.
 
-**Precedence**, highest first:
+#### One `.vop` for a whole tree of repos
+
+Repository roots are **not** boundaries, so the search keeps climbing past a
+directory containing `.git`. If your checkouts are grouped by client or company,
+one file at the top covers all of them:
+
+```bash
+echo acme-prod > ~/Projects/acme/.vop
+# applies in ~/Projects/acme/api, ~/Projects/acme/infra, …
+```
+
+`~/.vop` works the same way as a personal fallback for everything else.
+
+A `.vop` **inside** a repo still takes precedence, since the nearest file wins.
+To exempt a single repo from an inherited default, drop an empty (or
+comments-only) `.vop` at its root — a file with no profile name in it means "no
+default here" and stops the search rather than inheriting a parent's:
+
+```bash
+echo '# no default: name the profile explicitly here' > ~/Projects/acme/sandbox/.vop
+```
+
+#### Precedence
+
+Highest first:
 
 1. An explicit argument — `vop exec tap -- …`
 2. `VOP_PROFILE` (exported by `vop shell`), then `AGENT_DECK_VOP_PROFILE`
 3. The nearest `.vop` file
 4. The interactive picker, for commands that have one
 
-The environment deliberately beats `.vop`. A `.vop` file is repository content,
-and letting repository content silently redirect credentials to a different AWS
+The environment deliberately beats `.vop`. A `.vop` file is a property of
+wherever you happen to be standing — often checked in, often written for a whole
+tree of repos — and letting it silently redirect credentials to a different AWS
 account would defeat the point of pinning a session to one profile. When a
 `.vop` file is passed over for that reason, vop says so:
 
@@ -270,8 +293,9 @@ account would defeat the point of pinning a session to one profile. When a
     pinned to 'ednition' by AGENT_DECK_VOP_PROFILE
 ```
 
-Since `.vop` is usually repo-specific, either commit it (it names a profile, not
-a secret) or add it to `.git/info/exclude`.
+A repo-specific `.vop` is safe to commit (it names a profile, not a secret); the
+alternative is `.git/info/exclude`. A `.vop` above your checkouts isn't inside
+any repo, so there's nothing to ignore.
 
 For `vop exec`, the `--` separator is required when you omit the profile, so the
 two forms stay unambiguous:
