@@ -268,9 +268,6 @@ func cmdAdd(_ *cobra.Command, args []string) error {
 		externalID = ui.Prompt("External ID (blank = none)", "")
 	}
 
-	// Agent policy
-	agentPolicy := promptAgentPolicy("")
-
 	profile := &config.Profile{
 		OPAccount:           opAccount,
 		OPItem:              opItem,
@@ -281,7 +278,6 @@ func cmdAdd(_ *cobra.Command, args []string) error {
 		MFATOTPItem:         mfaTOTPItem,
 		IAMUsername:         iamUsername,
 		ServiceAccountToken: serviceAccountToken,
-		AgentPolicy:         agentPolicy,
 		RoleARN:             roleARN,
 		SourceProfile:       sourceProfile,
 		RoleSessionName:     roleSessionName,

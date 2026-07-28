@@ -46,9 +46,6 @@ func cmdEdit(_ *cobra.Command, args []string) error {
 	roleSessionName := ui.Prompt("Role session name (blank = 'vop')", profile.RoleSessionName)
 	externalID := ui.Prompt("External ID (blank = none)", profile.ExternalID)
 
-	// Agent policy: show default instructions, offer to customize.
-	agentPolicy := promptAgentPolicy(profile.AgentPolicy)
-
 	// Preserve existing field map, offer to edit it
 	fieldMap := profile.FieldMap
 	if len(fieldMap) > 0 {
@@ -87,7 +84,6 @@ func cmdEdit(_ *cobra.Command, args []string) error {
 		MFATOTPItem:         mfaTOTPItem,
 		IAMUsername:         iamUsername,
 		ServiceAccountToken: serviceAccountToken,
-		AgentPolicy:         agentPolicy,
 		RoleARN:             roleARN,
 		SourceProfile:       sourceProfile,
 		RoleSessionName:     roleSessionName,

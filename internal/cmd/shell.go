@@ -107,7 +107,6 @@ func cmdShell(cmd *cobra.Command, args []string) error {
 	os.Setenv("AWS_SHARED_CREDENTIALS_FILE", creds.CredFilePath(profileName))
 
 	ui.Info("Spawning sub-shell for '%s'. Type 'exit' to leave.", profileName)
-	ui.Info("Run 'vop agent' for credential paths and AI agent instructions.")
 	fmt.Println()
 
 	// Start background auto-refresh if credentials have an expiration.

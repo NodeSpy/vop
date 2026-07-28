@@ -77,11 +77,6 @@ type Profile struct {
 	// op CLI. When set, OPVault is required and OPAccount is ignored.
 	ServiceAccountToken string `json:"service_account_token,omitempty"`
 
-	// AgentPolicy contains custom instructions for AI agents provided via
-	// 'vop agent'. When empty, the default read-only instructions are used.
-	// Any non-empty string replaces the default instructions entirely.
-	AgentPolicy string `json:"agent_policy,omitempty"`
-
 	// RoleARN, if set, causes vop to call sts:AssumeRole after fetching the
 	// source profile's credentials. Requires SourceProfile to be set.
 	RoleARN string `json:"role_arn,omitempty"`
@@ -296,21 +291,4 @@ func (c *Config) SetProfile(name string, p *Profile) {
 // DeleteProfile removes a profile by name.
 func (c *Config) DeleteProfile(name string) {
 	delete(c.Profiles, name)
-}
-
-// DefaultAgentInstructions is the default read-only policy applied when no
-// custom agent_policy is configured on a profile.
-const DefaultAgentInstructions = "IMPORTANT: These AWS credentials must be used for READ-ONLY " +
-	"operations only. Do NOT create, modify, or delete any AWS resources unless you have " +
-	"been explicitly granted permission by the user for a specific operation. If you need " +
-	"to perform a write operation, ask the user for permission first and explain what you " +
-	"intend to do."
-
-// AgentInstructions returns the agent policy instruction text for this profile.
-// Returns the custom policy if set, otherwise the default read-only instructions.
-func (p *Profile) AgentInstructions() string {
-	if p.AgentPolicy != "" {
-		return p.AgentPolicy
-	}
-	return DefaultAgentInstructions
 }

@@ -227,7 +227,6 @@ Profiles are stored in `~/.config/vop/profiles.json` (chmod 600). This file is i
 | `mfa_serial` | No | Explicit MFA device ARN (overrides file/1P/IAM lookup) |
 | `iam_username` | No | IAM username (for key rotation) |
 | `description` | No | Profile description |
-| `agent_policy` | No | Custom agent instructions (default: read-only) |
 | `role_arn` | Role only | ARN of an IAM role to `sts:AssumeRole` into |
 | `source_profile` | Role only | Name of another vop profile whose creds are used to assume the role |
 | `role_session_name` | No | Session name passed to `sts:AssumeRole` (defaults to `vop`) |
@@ -507,7 +506,6 @@ The token is stored in `~/.config/vop/profiles.json` which is chmod 600 and shou
 | `vop profile` | Print the profile that resolves here (name on stdout, origin on stderr) |
 | `vop refresh [profile]` | Refresh credentials in an active shell |
 | `vop cred-process <profile>` | Output credentials for AWS `credential_process` |
-| `vop agent [profile]` | Show credential paths for AI agents / external tools |
 | `vop add [profile]` | Add a new profile |
 | `vop edit <profile>` | Edit an existing profile |
 | `vop rm <profile>` | Remove a profile |

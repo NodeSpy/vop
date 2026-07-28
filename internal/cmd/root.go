@@ -61,7 +61,6 @@ func NewRootCmd() *cobra.Command {
 	}
 	root.AddCommand(newRefreshCmd())
 	root.AddCommand(newCredProcessCmd())
-	root.AddCommand(newAgentCmd())
 	root.AddCommand(newCatCmd())
 	root.AddCommand(newServeCmd())
 	root.AddCommand(newAuthCmd())
@@ -255,35 +254,6 @@ func pushToServer(profileName string, awsCreds *creds.AWSCredentials) bool {
 		return false
 	}
 	return true
-}
-
-// promptAgentPolicy shows the current/default agent instructions and offers
-// the user a chance to customize them. Returns the custom string to store
-// in the profile, or "" to use the default read-only instructions.
-func promptAgentPolicy(current string) string {
-	fmt.Println()
-	ui.Info("Agent instructions (shown to AI agents via 'vop agent'):")
-	if current != "" {
-		fmt.Printf("    Current: %s\n", current)
-	} else {
-		fmt.Printf("    Default: %s\n", config.DefaultAgentInstructions)
-	}
-	fmt.Println()
-
-	if !ui.PromptYN("Customize agent instructions?", false) {
-		return current
-	}
-
-	// Show the default as the starting point for editing.
-	defaultText := current
-	if defaultText == "" {
-		defaultText = config.DefaultAgentInstructions
-	}
-	custom := ui.Prompt("Agent instructions (blank to reset to default)", defaultText)
-	if custom == config.DefaultAgentInstructions {
-		return "" // same as default, don't store
-	}
-	return custom
 }
 
 // completeProfiles provides tab-completion for profile names.
