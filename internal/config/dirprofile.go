@@ -38,7 +38,26 @@ type DirProfile struct {
 // single file at ~/Projects/acme can supply the default for every repo beneath
 // it. Files inside a checkout still take precedence, since the nearest one
 // wins, and an empty .vop at a repo root opts that repo out of inheriting.
+//
+// A linked git worktree lives outside the repository's own directory tree —
+// typically under a tool's scratch area — so walking up from it never reaches
+// a .vop the user placed above their main checkout. When the physical walk
+// finds nothing, the search is retried from the repository's main working
+// tree, so a worktree inherits the same default its main checkout would.
 func FindDirProfile(startDir string) (*DirProfile, error) {
+	dp, err := walkForDirProfile(startDir)
+	if err != nil || dp != nil {
+		return dp, err
+	}
+	if main := mainWorktreeDir(startDir); main != "" {
+		return walkForDirProfile(main)
+	}
+	return nil, nil
+}
+
+// walkForDirProfile performs the upward .vop search from startDir, honouring
+// the $HOME and filesystem-root boundaries.
+func walkForDirProfile(startDir string) (*DirProfile, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
 		return nil, err
@@ -72,6 +91,70 @@ func FindDirProfile(startDir string) (*DirProfile, error) {
 		dir = parent
 	}
 	return nil, nil
+}
+
+// mainWorktreeDir returns the path of the repository's main working tree when
+// startDir sits inside a linked git worktree, or "" otherwise — including when
+// startDir is a plain repository, is the main worktree itself, or isn't in a
+// repository at all. It reads git's on-disk layout directly rather than
+// shelling out to git.
+func mainWorktreeDir(startDir string) string {
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		return ""
+	}
+	for range dirProfileWalkLimit {
+		gitPath := filepath.Join(dir, ".git")
+		if info, err := os.Stat(gitPath); err == nil {
+			if info.IsDir() {
+				// A .git directory is a plain repo or the main worktree; its
+				// own ancestors were already covered by the physical walk.
+				return ""
+			}
+			return resolveMainWorktree(gitPath)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+	return ""
+}
+
+// resolveMainWorktree maps a linked worktree's .git file to the path of the
+// repository's main working tree, or "" if gitFile isn't a worktree pointer.
+//
+// A linked worktree's .git is a file holding "gitdir: <path>" where <path> is
+// the per-worktree admin dir (…/.git/worktrees/<name>). That dir's commondir
+// file locates the shared .git directory, whose parent is the main worktree.
+func resolveMainWorktree(gitFile string) string {
+	data, err := os.ReadFile(gitFile)
+	if err != nil {
+		return ""
+	}
+	line := strings.TrimSpace(string(data))
+	gitdir, ok := strings.CutPrefix(line, "gitdir:")
+	if !ok {
+		return ""
+	}
+	gitdir = strings.TrimSpace(gitdir)
+	if !filepath.IsAbs(gitdir) {
+		gitdir = filepath.Join(filepath.Dir(gitFile), gitdir)
+	}
+
+	commonRaw, err := os.ReadFile(filepath.Join(filepath.Clean(gitdir), "commondir"))
+	if err != nil {
+		// No commondir means this isn't a linked worktree (e.g. a submodule's
+		// gitdir points straight at the parent repo's admin dir).
+		return ""
+	}
+	common := strings.TrimSpace(string(commonRaw))
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(gitdir, common)
+	}
+	// common is the shared ".git" directory; the working tree is its parent.
+	return filepath.Dir(filepath.Clean(common))
 }
 
 // readDirProfile returns the profile name declared in a .vop file: the first

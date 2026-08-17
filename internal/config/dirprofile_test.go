@@ -126,6 +126,76 @@ func TestFindDirProfile_CrossesWorktreeRoot(t *testing.T) {
 	}
 }
 
+// linkWorktree lays out a linked git worktree: a physically-detached worktree
+// dir whose .git file points at the main repo's per-worktree admin dir, with a
+// commondir back to the shared .git. Returns the worktree's path.
+func linkWorktree(t *testing.T, mainRepo, worktreeParent, name string) string {
+	t.Helper()
+	admin := filepath.Join(mainRepo, ".git", "worktrees", name)
+	if err := os.MkdirAll(admin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(admin, "commondir"), []byte("../..\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(worktreeParent, name)
+	if err := os.MkdirAll(wt, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+admin+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return wt
+}
+
+func TestFindDirProfile_InheritsFromMainWorktree(t *testing.T) {
+	// The worktree lives far from the repo (a tool's scratch area), so no .vop
+	// sits on its physical path — but one lives above the main checkout, and
+	// the worktree should inherit it just as the main checkout would.
+	home := t.TempDir()
+	boundWalkAtHome(t, home)
+
+	projects := filepath.Join(home, "Projects", "acme")
+	writeDirProfile(t, projects, "tap")
+	mainRepo := filepath.Join(projects, "vop")
+	markRepoRoot(t, mainRepo)
+
+	scratch := filepath.Join(home, ".scratch", "worktrees")
+	wt := linkWorktree(t, mainRepo, scratch, "feature-x")
+
+	got, err := FindDirProfile(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Name != "tap" {
+		t.Fatalf("got %+v, want 'tap' inherited via the main worktree", got)
+	}
+}
+
+func TestFindDirProfile_MainWorktreeFallbackYieldsToPhysicalWalk(t *testing.T) {
+	// A .vop on the worktree's own physical path takes precedence over the
+	// main checkout's ancestor default — the fallback is only a fallback.
+	home := t.TempDir()
+	boundWalkAtHome(t, home)
+
+	projects := filepath.Join(home, "Projects", "acme")
+	writeDirProfile(t, projects, "tap")
+	mainRepo := filepath.Join(projects, "vop")
+	markRepoRoot(t, mainRepo)
+
+	scratch := filepath.Join(home, ".scratch", "worktrees")
+	writeDirProfile(t, scratch, "scratch-default")
+	wt := linkWorktree(t, mainRepo, scratch, "feature-x")
+
+	got, err := FindDirProfile(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Name != "scratch-default" {
+		t.Fatalf("got %+v, want the physical-path file to win", got)
+	}
+}
+
 func TestFindDirProfile_EmptyFileAtRepoRootOptsOut(t *testing.T) {
 	// The documented shield: an empty .vop at a repo root keeps an ancestor's
 	// default from reaching into that one repo.
