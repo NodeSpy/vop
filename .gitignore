@@ -5,6 +5,5 @@ dist/
 # OS files
 .DS_Store
 
-# Nix
-result
+# Test artifacts
 vop-test

@@ -249,68 +249,6 @@ jobs:
             git pull --rebase origin main
           done
 
-  nix:
-    name: Update Nix flake
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: cachix/install-nix-action@v31
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - name: Bump flake version and recompute vendorHash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          PLACEHOLDER='sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git checkout main
-          git reset --hard origin/main
-
-          # Bump version (single quoted-string assignment of `version`).
-          sed -i "s/version = \"[^\"]*\";/version = \"${VERSION}\";/" flake.nix
-
-          # Reset vendorHash to the placeholder so the build error tells us the real hash.
-          sed -i "s|vendorHash = \"sha256-[A-Za-z0-9+/=]*\";|vendorHash = \"${PLACEHOLDER}\";|" flake.nix
-
-          # First build is expected to fail with the correct hash in stderr.
-          BUILD_LOG=$(nix build .#vop --no-link 2>&1 || true)
-          echo "--- nix build (first pass, expected to fail) ---"
-          echo "$BUILD_LOG"
-
-          VENDOR_HASH=$(echo "$BUILD_LOG" | grep -oE 'got: *sha256-[A-Za-z0-9+/=]+' | sed 's/got: *//' | tail -1)
-          if [ -z "$VENDOR_HASH" ]; then
-            echo "Failed to extract vendorHash from nix build output"
-            exit 1
-          fi
-          echo "Computed vendorHash: $VENDOR_HASH"
-
-          sed -i "s|vendorHash = \"${PLACEHOLDER}\";|vendorHash = \"${VENDOR_HASH}\";|" flake.nix
-
-          # Verify the build now succeeds with the real hash.
-          nix build .#vop --no-link
-
-          if git diff --quiet flake.nix; then
-            echo "flake.nix unchanged — nothing to commit"
-            exit 0
-          fi
-
-          git add flake.nix
-          git commit -m "Update Nix flake for ${GITHUB_REF_NAME}"
-
-          # Retry push in case main advanced (Homebrew job pushes too).
-          for i in 1 2 3; do
-            git push origin main && break
-            echo "Push failed (attempt $i), rebasing and retrying..."
-            git pull --rebase origin main
-          done
-
   aur:
     name: Publish to AUR
     needs: release
